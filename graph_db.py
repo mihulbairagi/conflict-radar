@@ -175,12 +175,14 @@ RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
        blocker.id AS blocker_id
 """
 
-# Retrieves recent collision events ordered chronologically.
+# Retrieves recent collision events ordered chronologically, along with involved symbols.
 GET_ALL_COLLISIONS_QUERY = """
 MATCH (col:Collision)
+OPTIONAL MATCH (col)-[:INVOLVED]->(s:Symbol)
+WITH col, collect(s.id) AS inv_syms
 RETURN col.id AS id, col.verdict AS verdict, col.path_text AS path_text,
        col.timestamp AS timestamp, col.agent_a AS agent_a, col.agent_b AS agent_b,
-       col.sym_a AS sym_a, col.sym_b AS sym_b
+       col.sym_a AS sym_a, col.sym_b AS sym_b, inv_syms
 ORDER BY col.timestamp DESC
 """
 
@@ -303,6 +305,20 @@ class GraphDB:
         if not self.strict:
             self._mem_nodes[sym_id] = {"type": "Symbol", "id": sym_id, "name": name, "file": file, "kind": kind}
         self._query(UPSERT_SYMBOL_QUERY, {"id": sym_id, "name": name, "file": file, "kind": kind})
+
+    def get_all_symbol_ids(self) -> List[str]:
+        """Return list of all existing Symbol IDs in the graph."""
+        res = self._query(GET_CODE_GRAPH_SYMBOLS_QUERY)
+        if res is not None:
+            return [row[0] for row in res.result_set]
+        return [nid for nid, n in self._mem_nodes.items() if n.get("type") == "Symbol"]
+
+    def symbol_exists(self, symbol_id: str) -> bool:
+        """Check if a Symbol exists in the graph."""
+        res = self._query("MATCH (s:Symbol {id: $id}) RETURN count(s) AS count", {"id": symbol_id})
+        if res is not None and res.result_set:
+            return (res.result_set[0][0] or 0) > 0
+        return symbol_id in self._mem_nodes and self._mem_nodes[symbol_id].get("type") == "Symbol"
 
     def add_contains(self, file_path: str, sym_id: str):
         """Create a (File)-[:CONTAINS]->(Symbol) relationship."""
@@ -692,15 +708,29 @@ class GraphDB:
         if res is not None:
             results = []
             for row in res.result_set[:limit]:
+                col_id, verdict, path_text, ts, ag_a, ag_b = row[0], row[1], row[2], row[3], row[4], row[5]
+                s_a = row[6] if len(row) > 6 and row[6] else None
+                s_b = row[7] if len(row) > 7 and row[7] else None
+                inv_syms = row[8] if len(row) > 8 and row[8] else []
+                if not s_a and len(inv_syms) > 0:
+                    s_a = inv_syms[0]
+                if not s_b and len(inv_syms) > 1:
+                    s_b = inv_syms[1]
+                if (not s_a or not s_b) and path_text:
+                    parts = path_text.split(" -> ")
+                    if not s_a and parts:
+                        s_a = parts[0]
+                    if not s_b and parts:
+                        s_b = parts[-1]
                 results.append({
-                    "id": row[0],
-                    "verdict": row[1],
-                    "path_text": row[2],
-                    "timestamp": row[3],
-                    "agent_a": row[4],
-                    "agent_b": row[5],
-                    "sym_a": row[6] if len(row) > 6 else None,
-                    "sym_b": row[7] if len(row) > 7 else None
+                    "id": col_id,
+                    "verdict": verdict,
+                    "path_text": path_text,
+                    "timestamp": ts,
+                    "agent_a": ag_a,
+                    "agent_b": ag_b,
+                    "sym_a": s_a,
+                    "sym_b": s_b
                 })
             return results
 

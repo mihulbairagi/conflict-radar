@@ -45,6 +45,16 @@ def claim(agent_id: str, symbol_id: str, change_type: str = "BODY") -> Dict[str,
         change_type: 'SIGNATURE' (renaming, changing params, deleting) or 'BODY' (internal logic only).
     """
     verdict = radar.claim(agent_id=agent_id, symbol_id=symbol_id, change_type=change_type)
+    if verdict.verdict == "ERROR":
+        res = {
+            "verdict": "ERROR",
+            "error": verdict.error,
+            "reason": verdict.reason
+        }
+        if verdict.suggestions:
+            res["suggestions"] = verdict.suggestions
+        return res
+
     return {
         "verdict": verdict.verdict,
         "claim_id": verdict.claim_id,

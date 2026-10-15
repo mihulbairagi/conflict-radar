@@ -195,3 +195,50 @@ def test_real_falkordb_blocked_by_promotion_on_release():
     assert chk_active.get("blocked_by") is None
 
     db.clear()
+
+
+@skip_if_no_falkordb
+def test_real_falkordb_sse_stream_precedent_count():
+    """Verify that the SSE event stream on real FalkorDB computes precedent_count == 2 on the 3rd collision."""
+    import json
+    import dashboard
+    from fastapi.testclient import TestClient
+
+    db = GraphDB(strict=True)
+    db.connect()
+    db.clear()
+
+    # Create symbols
+    db.upsert_symbol("sym_x", "func_x", "x.py", "function")
+    db.upsert_symbol("sym_y", "func_y", "y.py", "function")
+    db.add_calls("sym_x", "sym_y")
+
+    # Record 3 collisions between sym_x and sym_y at distinct increasing timestamps
+    t0 = 1000.0
+    db.record_collision("sym_x", "sym_y", "WARN", "sym_x -> sym_y", "agent-1", "agent-2", now=t0)
+    db.record_collision("sym_x", "sym_y", "BLOCK", "sym_x -> sym_y", "agent-1", "agent-2", now=t0 + 10)
+    db.record_collision("sym_x", "sym_y", "BLOCK", "sym_x -> sym_y", "agent-1", "agent-2", now=t0 + 20)
+
+    # Point dashboard db to this connected test db
+    dashboard.db = db
+    client = TestClient(dashboard.app)
+
+    # Request events stream with limit=2 cycles (seed=false so all 3 will be emitted)
+    with client.stream("GET", "/events?limit=2&seed=false") as response:
+        collision_events = []
+        for line in response.iter_lines():
+            if line.startswith("data: "):
+                data = json.loads(line[6:])
+                if data.get("type") == "collision":
+                    collision_events.append(data)
+
+    assert len(collision_events) == 3
+    # First collision has precedent 0
+    assert collision_events[0]["precedent_count"] == 0
+    # Second collision has precedent 1
+    assert collision_events[1]["precedent_count"] == 1
+    # Third collision has precedent 2
+    assert collision_events[2]["precedent_count"] == 2
+    assert "seen 2 times before" in collision_events[2]["reason"]
+
+    db.clear()

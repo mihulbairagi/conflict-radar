@@ -7,6 +7,7 @@ Step 5: Includes precedent collision memory and lazy claim expiry with injectabl
 
 import os
 import time
+import difflib
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple, Callable
@@ -16,14 +17,16 @@ from graph_db import GraphDB
 @dataclass
 class Verdict:
     """Represents the safety verdict and graph evidence for a proposed claim."""
-    verdict: str  # "SAFE", "WARN", "BLOCK"
-    claim_id: str
-    conflicting_claim_id: Optional[str]
+    verdict: str  # "SAFE", "WARN", "BLOCK", "ERROR"
+    claim_id: Optional[str] = None
+    conflicting_claim_id: Optional[str] = None
     path: List[str] = field(default_factory=list)
     hops: int = 0
     reason: str = ""
     precedent_count: int = 0
     last_collision_time: Optional[float] = None
+    error: Optional[str] = None
+    suggestions: List[str] = field(default_factory=list)
 
 
 class ConflictRadar:
@@ -168,9 +171,53 @@ class ConflictRadar:
 
     def claim(self, agent_id: str, symbol_id: str, change_type: str = "BODY") -> Verdict:
         """Register a claim and evaluate it against other agents' active claims."""
+        # 1. Validate agent_id
+        if not agent_id or not isinstance(agent_id, str) or not agent_id.strip():
+            return Verdict(
+                verdict="ERROR",
+                claim_id=None,
+                conflicting_claim_id=None,
+                reason="agent_id must be a non-empty string.",
+                error="INVALID_AGENT_ID"
+            )
+        agent_id = agent_id.strip()
+
+        # 2. Validate change_type
+        raw_type = (change_type or "").strip().upper() if isinstance(change_type, str) else ""
+        if raw_type in ("SIGNATURE", "RENAME", "DELETE"):
+            c_type = "SIGNATURE"
+        elif raw_type == "BODY":
+            c_type = "BODY"
+        else:
+            return Verdict(
+                verdict="ERROR",
+                claim_id=None,
+                conflicting_claim_id=None,
+                reason=f"Invalid change_type '{change_type}'. Allowed values are 'SIGNATURE', 'BODY', 'RENAME', or 'DELETE'.",
+                error="INVALID_CHANGE_TYPE"
+            )
+
+        # 3. Validate symbol existence
+        if not self.db.symbol_exists(symbol_id):
+            all_syms = self.db.get_all_symbol_ids()
+            suggestions = difflib.get_close_matches(symbol_id, all_syms, n=3, cutoff=0.2)
+            if not suggestions and all_syms:
+                base = symbol_id.split("::")[-1]
+                suggestions = [s for s in all_syms if base in s][:3]
+                if not suggestions:
+                    suggestions = all_syms[:3]
+            sugg_str = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+            return Verdict(
+                verdict="ERROR",
+                claim_id=None,
+                conflicting_claim_id=None,
+                reason=f"Unknown symbol '{symbol_id}' not found in codebase graph.{sugg_str}",
+                error="UNKNOWN_SYMBOL",
+                suggestions=suggestions
+            )
+
         self._expire_stale()
 
-        c_type = change_type.upper()
         now = self.clock()
         active_claims = self.db.get_active_claims()
 

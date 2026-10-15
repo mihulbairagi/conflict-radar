@@ -9,6 +9,7 @@ FastAPI application providing:
 """
 
 import os
+import sys
 import json
 import asyncio
 from typing import Dict, Any, List, Set, Optional
@@ -60,7 +61,7 @@ async def reset_demo() -> Dict[str, Any]:
 
 
 @app.get("/events")
-async def sse_events(request: Request, limit: Optional[int] = None):
+async def sse_events(request: Request, limit: Optional[int] = None, seed: bool = True):
     """Server-Sent Events (SSE) streaming live updates when claims mutate or collisions are logged."""
 
     async def event_generator():
@@ -68,13 +69,14 @@ async def sse_events(request: Request, limit: Optional[int] = None):
         known_claims: Dict[str, str] = {}  # claim_id -> status
         known_collisions: Set[str] = set()
 
-        # Initial seed of existing claims and collisions so we don't spam initial history as new alerts
-        initial_graph = db.get_full_graph()
-        for c in initial_graph.get("claims", []):
-            known_claims[c["id"]] = c["status"]
+        if seed:
+            # Initial seed of existing claims and collisions so we don't spam initial history as new alerts
+            initial_graph = db.get_full_graph()
+            for c in initial_graph.get("claims", []):
+                known_claims[c["id"]] = c["status"]
 
-        for col in db.get_recent_collisions(limit=100):
-            known_collisions.add(col["id"])
+            for col in db.get_recent_collisions(limit=100):
+                known_collisions.add(col["id"])
 
         # Send initial connected ping
         yield f"data: {json.dumps({'type': 'init', 'message': 'Connected to Conflict Radar event stream'})}\n\n"
@@ -137,6 +139,11 @@ async def sse_events(request: Request, limit: Optional[int] = None):
                         sym_b = col.get("sym_b") or (path_parts[-1] if path_parts else "")
                         prec = db.get_precedent(sym_a, sym_b, before_time=col.get("timestamp"))
                         p_count = prec.get("count", 0)
+                        last_seen = prec.get("last_seen")
+
+                        reason = f"{col['verdict']} collision: Agent '{col.get('agent_a')}' and Agent '{col.get('agent_b')}' along path {col['path_text']}"
+                        if p_count > 0:
+                            reason += f" (seen {p_count} time{'s' if p_count > 1 else ''} before)"
 
                         event_payload = {
                             "type": "collision",
@@ -145,15 +152,16 @@ async def sse_events(request: Request, limit: Optional[int] = None):
                             "agents": [col.get("agent_a", "agent_1"), col.get("agent_b", "agent_2")],
                             "path": path_parts,
                             "hops": hops,
-                            "reason": f"{col['verdict']} collision: Agent '{col.get('agent_a')}' and Agent '{col.get('agent_b')}' along path {col['path_text']}",
+                            "reason": reason,
                             "precedent_count": p_count,
+                            "last_seen": last_seen,
                             "timestamp": col["timestamp"]
                         }
                         yield f"data: {json.dumps(event_payload)}\n\n"
 
             except Exception as e:
-                # Keep stream alive despite any transient query interruption
-                pass
+                # Log error to stderr and keep stream alive
+                print(f"[SSE Error] Transient stream error: {e}", file=sys.stderr)
 
             # Poll frequency: 1 second interval
             await asyncio.sleep(1)

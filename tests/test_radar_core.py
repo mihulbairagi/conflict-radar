@@ -149,3 +149,53 @@ def test_case_6_identical_symbol_direct_collision(radar_fixture):
     assert v4.verdict == "BLOCK"
     assert v4.hops == 0
     assert v4.path == ["pkg/mod.py::func_a"]
+
+
+def test_unknown_symbol_returns_error_with_suggestions(radar_fixture):
+    """Unknown symbol returns ERROR verdict, UNKNOWN_SYMBOL code, fuzzy suggestions, and stores NO claim."""
+    radar = radar_fixture
+
+    # Mistyped symbol name without file prefix
+    v = radar.claim("agent_1", "func_a", change_type="BODY")
+    assert v.verdict == "ERROR"
+    assert v.error == "UNKNOWN_SYMBOL"
+    assert v.claim_id is None
+    assert "pkg/mod.py::func_a" in v.suggestions
+    assert "Did you mean:" in v.reason
+
+    # Verify no claim was stored in database
+    assert len(radar.db.get_active_claims()) == 0
+
+
+def test_invalid_change_type_returns_error(radar_fixture):
+    """Unsupported change_type returns ERROR verdict with clear message."""
+    radar = radar_fixture
+
+    v = radar.claim("agent_1", "pkg/mod.py::func_a", change_type="INVALID_CHANGE")
+    assert v.verdict == "ERROR"
+    assert v.error == "INVALID_CHANGE_TYPE"
+    assert "Invalid change_type" in v.reason
+    assert len(radar.db.get_active_claims()) == 0
+
+
+def test_delete_and_rename_treated_as_signature(radar_fixture):
+    """DELETE and RENAME are accepted as valid and treated with SIGNATURE severity."""
+    radar = radar_fixture
+
+    # Agent 1 deletes B
+    v1 = radar.claim("agent_1", "pkg/mod.py::func_b", change_type="DELETE")
+    assert v1.verdict == "SAFE"
+
+    # Agent 2 modifies body of A (A calls B) -> must BLOCK because B is being deleted/renamed
+    v2 = radar.claim("agent_2", "pkg/mod.py::func_a", change_type="BODY")
+    assert v2.verdict == "BLOCK"
+
+
+def test_empty_agent_id_returns_error(radar_fixture):
+    """Empty or whitespace-only agent_id returns ERROR."""
+    radar = radar_fixture
+
+    v = radar.claim("   ", "pkg/mod.py::func_a", change_type="BODY")
+    assert v.verdict == "ERROR"
+    assert v.error == "INVALID_AGENT_ID"
+    assert len(radar.db.get_active_claims()) == 0

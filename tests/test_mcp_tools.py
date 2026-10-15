@@ -146,3 +146,24 @@ def test_mcp_multi_waiter_cascade_unblock(mcp_fixture):
     # Both are now active
     assert mcp_server.check(c2["claim_id"])["status"] == "active"
     assert mcp_server.check(c3["claim_id"])["status"] == "active"
+
+
+def test_mcp_unknown_symbol_error_payload(mcp_fixture):
+    """mcp_server.claim returns structured ERROR payload with suggestions for unknown symbols."""
+    res = mcp_server.claim("agent_1", "func_a", "BODY")
+    assert res["verdict"] == "ERROR"
+    assert res["error"] == "UNKNOWN_SYMBOL"
+    assert "suggestions" in res
+    assert "pkg/mod.py::func_a" in res["suggestions"]
+    assert "claim_id" not in res
+
+
+def test_mcp_invalid_inputs_error_payload(mcp_fixture):
+    """mcp_server.claim validates agent_id and change_type."""
+    res1 = mcp_server.claim("", "pkg/mod.py::func_a", "BODY")
+    assert res1["verdict"] == "ERROR"
+    assert res1["error"] == "INVALID_AGENT_ID"
+
+    res2 = mcp_server.claim("agent_1", "pkg/mod.py::func_a", "SUPER_CHANGE")
+    assert res2["verdict"] == "ERROR"
+    assert res2["error"] == "INVALID_CHANGE_TYPE"
