@@ -331,7 +331,12 @@ Before editing any function or class:
 
 ## 10. AI Use Disclosure
 
-<!-- TODO: Mihul writes this -->
+Conflict Radar was built through human-led, AI-assisted engineering by Mihul Bairagi for the WeMakeDevs x FalkorDB Graph Hacks:
+
+- **System Architecture & Logic (Human / Mihul):** The core workflow was conceptualized and architected by me—moving beyond blunt file locks to fine-grained AST call-graph dependency tracking in FalkorDB. I designed the 3-tier verdict matrix (`SAFE`, `WARN`, `BLOCK`), the signature conflict detection rules, the cascade unblocking workflow, and the graph memory model (`:Collision` incident nodes).
+- **Code Implementation (Google Antigravity):** I used Google Antigravity as an automated pair programmer to scaffold code according to my architectural specifications, including the Python AST visitor (`indexer.py`), FalkorDB Cypher integration (`graph_db.py`), FastAPI backend, and Cytoscape.js canvas wiring.
+- **Review & Edge-Case Audit (Claude):** I used Claude as an independent code reviewer to stress-test edge cases, catching FalkorDB query syntax restrictions, floating-point timestamp bugs in precedent counts, and enforcing honest protocol documentation.
+- **Verification & Testing (Human / Mihul):** I set up and managed the local Docker FalkorDB environment, eliminated mock tests in favor of strict real-database tests, and iteratively directed the AI tools until all 41 test scenarios passed cleanly.
 
 ---
 
