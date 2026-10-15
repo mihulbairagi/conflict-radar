@@ -133,8 +133,9 @@ async def sse_events(request: Request, limit: Optional[int] = None):
                         path_parts = col["path_text"].split(" -> ") if col.get("path_text") else []
                         hops = max(0, len(path_parts) - 1)
 
-                        # Lookup precedent count strictly before this collision
-                        prec = db.get_precedent(col.get("sym_a", ""), col.get("sym_b", ""), before_time=col.get("timestamp"))
+                        sym_a = col.get("sym_a") or (path_parts[0] if path_parts else "")
+                        sym_b = col.get("sym_b") or (path_parts[-1] if path_parts else "")
+                        prec = db.get_precedent(sym_a, sym_b, before_time=col.get("timestamp"))
                         p_count = prec.get("count", 0)
 
                         event_payload = {

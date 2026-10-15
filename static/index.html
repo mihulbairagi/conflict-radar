@@ -47,6 +47,8 @@
       justify-content: space-between;
       align-items: center;
       z-index: 10;
+      flex-shrink: 0;
+      height: 60px;
     }
 
     .brand {
@@ -120,26 +122,31 @@
       border-color: #4b5563;
     }
 
-    /* Collision Alert Banner */
+    /* Collision Alert Banner: never truncate, wrap cleanly, prominent 18px text */
     #alert-banner {
       display: none;
       background: rgba(239, 68, 68, 0.25);
       border-bottom: 2px solid var(--block);
-      padding: 12px 24px;
+      padding: 14px 24px;
       color: #fca5a5;
-      font-size: 15px;
+      font-size: 18px;
       font-weight: 700;
       text-align: center;
       position: relative;
       z-index: 20;
+      flex-shrink: 0;
+      line-height: 1.4;
+      white-space: normal;
+      word-break: break-word;
     }
 
-    /* Main Container: Split View */
+    /* Main Container: Flexbox handles remaining height naturally */
     .main-container {
       display: flex;
       flex: 1;
-      height: calc(100vh - 61px);
+      min-height: 0;
       position: relative;
+      overflow: hidden;
     }
 
     /* Graph Canvas Area */
@@ -147,6 +154,7 @@
       flex: 1;
       position: relative;
       background: radial-gradient(circle at center, #111827 0%, #090d16 100%);
+      min-width: 0;
     }
 
     #cy {
@@ -156,20 +164,22 @@
 
     /* Sidebar Area */
     .sidebar {
-      width: 420px;
+      width: 440px;
       height: 100%;
       background: var(--card-bg);
       border-left: 1px solid var(--panel-border);
       display: flex;
       flex-direction: column;
       z-index: 5;
+      flex-shrink: 0;
+      overflow: hidden;
     }
 
     /* Legend Box */
     .legend-box {
-      padding: 16px;
+      padding: 16px 20px;
       border-bottom: 1px solid var(--panel-border);
-      background: rgba(17, 24, 39, 0.6);
+      background: rgba(17, 24, 39, 0.7);
       flex-shrink: 0;
     }
 
@@ -185,8 +195,8 @@
     .legend-items {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      font-size: 12px;
+      gap: 10px;
+      font-size: 13px;
     }
 
     .legend-item {
@@ -197,9 +207,9 @@
     }
 
     .legend-swatch {
-      width: 12px;
-      height: 12px;
-      border-radius: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 4px;
     }
 
     .swatch-active { background: var(--safe); }
@@ -207,7 +217,7 @@
     .swatch-block { background: var(--block); }
     .swatch-neutral { background: #4b5563; }
 
-    /* Live Verdict Feed */
+    /* Live Verdict Feed Container */
     .feed-container {
       flex: 1;
       min-height: 0;
@@ -217,62 +227,68 @@
     }
 
     .feed-header {
-      padding: 14px 16px;
+      padding: 14px 20px;
       border-bottom: 1px solid var(--panel-border);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
       color: #e5e7eb;
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-shrink: 0;
+      background: rgba(17, 24, 39, 0.4);
     }
 
     .feed-list {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      padding: 12px;
+      padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
     }
 
+    /* High contrast cards */
     .feed-card {
-      background: #1a2234;
-      border: 1px solid var(--panel-border);
+      background: #1e293b;
+      border: 1px solid #334155;
       border-radius: 8px;
-      padding: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
     }
 
     .feed-card.verdict-BLOCK {
-      border-left: 4px solid var(--block);
-      background: rgba(239, 68, 68, 0.08);
+      border-left: 5px solid var(--block);
+      background: rgba(239, 68, 68, 0.12);
     }
 
     .feed-card.verdict-WARN {
-      border-left: 4px solid var(--warn);
-      background: rgba(245, 158, 11, 0.08);
+      border-left: 5px solid var(--warn);
+      background: rgba(245, 158, 11, 0.12);
     }
 
     .feed-card.verdict-SAFE {
-      border-left: 4px solid var(--safe);
-      background: rgba(16, 185, 129, 0.08);
+      border-left: 5px solid var(--safe);
+      background: rgba(16, 185, 129, 0.12);
     }
 
     .card-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
     }
 
     .badge {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
-      padding: 2px 6px;
+      padding: 3px 8px;
       border-radius: 4px;
       text-transform: uppercase;
+      letter-spacing: 0.5px;
     }
 
     .badge-BLOCK { background: var(--block); color: #fff; }
@@ -280,32 +296,39 @@
     .badge-SAFE { background: var(--safe); color: #000; }
 
     .card-time {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--text-muted);
     }
 
     .card-reason {
-      font-size: 13px;
+      font-size: 14px;
+      font-weight: 500;
       color: #f3f4f6;
       line-height: 1.4;
-      margin-bottom: 6px;
     }
 
     .card-path {
-      font-size: 12px;
-      font-family: monospace;
+      font-size: 13px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       color: #93c5fd;
-      background: rgba(59, 130, 246, 0.1);
-      padding: 4px 6px;
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      padding: 6px 10px;
       border-radius: 4px;
-      display: inline-block;
-      margin-bottom: 4px;
+      word-break: break-all;
     }
 
     .card-precedent {
-      font-size: 11px;
+      font-size: 12px;
       color: #fbbf24;
-      font-weight: 600;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(251, 191, 36, 0.1);
+      padding: 4px 8px;
+      border-radius: 4px;
+      width: fit-content;
     }
   </style>
 </head>
@@ -317,7 +340,7 @@
       <div class="radar-icon">📡</div>
       <div>
         <div class="title">CONFLICT RADAR</div>
-        <div class="subtitle">Autonomous AI Traffic Controller & FalkorDB Call Graph</div>
+        <div class="subtitle">Autonomous AI Traffic Controller &amp; FalkorDB Call Graph</div>
       </div>
     </div>
     <div class="header-actions">
@@ -353,11 +376,11 @@
 
       <div class="feed-container">
         <div class="feed-header">
-          <span>Live Verdict & Claim Stream</span>
+          <span>Live Verdict &amp; Collision Stream</span>
           <span id="feed-counter" style="color: var(--text-muted); font-weight: normal; font-size: 12px;">0 events</span>
         </div>
         <div class="feed-list" id="feed-list">
-          <div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+          <div id="empty-feed-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
             Awaiting agent claims...
           </div>
         </div>
@@ -369,7 +392,7 @@
     let cy = null;
     let eventCount = 0;
 
-    // Initialize Cytoscape with readable, high-contrast styles for video recording
+    // Initialize Cytoscape with readable, 18px labels and auto-fitting node dimensions
     function initCytoscape() {
       cy = cytoscape({
         container: document.getElementById('cy'),
@@ -381,18 +404,19 @@
               'label': 'data(label)',
               'text-valign': 'center',
               'text-halign': 'center',
-              'font-size': '12px',
-              'font-weight': '600',
-              'color': '#f3f4f6',
-              'background-color': '#1f2937',
+              'font-size': '18px',
+              'font-weight': '700',
+              'color': '#f9fafb',
+              'background-color': '#1e293b',
               'border-width': 2,
-              'border-color': '#4b5563',
+              'border-color': '#475569',
               'shape': 'round-rectangle',
-              'width': 200,
-              'height': 64,
-              'padding': '10px',
-              'text-max-width': '190px',
-              'text-wrap': 'wrap'
+              'width': 'label',
+              'height': 'label',
+              'padding': '22px',
+              'text-max-width': '280px',
+              'text-wrap': 'wrap',
+              'line-height': 1.25
             }
           },
           // Active Claim (Green)
@@ -426,27 +450,30 @@
               'shadow-opacity': 0.8
             }
           },
-          // Directed CALLS Edge
+          // Directed CALLS Edge: Dim gray so path pops
           {
             selector: 'edge',
             style: {
               'width': 2,
-              'line-color': '#4b5563',
-              'target-arrow-color': '#4b5563',
+              'line-color': '#374151',
+              'target-arrow-color': '#374151',
               'target-arrow-shape': 'triangle',
               'curve-style': 'bezier',
-              'arrow-scale': 1.2
+              'arrow-scale': 1.2,
+              'opacity': 0.4
             }
           },
-          // Collision Path Edge (Thick Red)
+          // Collision Path Edge: 6px Red with clear arrowheads
           {
             selector: 'edge.collision-path',
             style: {
               'width': 6,
               'line-color': '#ef4444',
               'target-arrow-color': '#ef4444',
+              'target-arrow-shape': 'triangle',
               'line-style': 'solid',
-              'arrow-scale': 1.6,
+              'arrow-scale': 1.8,
+              'opacity': 1.0,
               'z-index': 999
             }
           }
@@ -454,8 +481,8 @@
         layout: {
           name: 'breadthfirst',
           directed: true,
-          padding: 40,
-          spacingFactor: 1.5,
+          padding: 60,
+          spacingFactor: 1.6,
           animate: false
         }
       });
@@ -471,13 +498,14 @@
 
         // Build node elements
         (data.nodes || []).forEach(n => {
+          const shortFile = (n.file || '').split('/').pop().split('\\').pop();
           elements.push({
             data: {
               id: n.id,
               name: n.name,
-              file: n.file,
+              file: shortFile,
               kind: n.kind,
-              label: `${n.name}\n(${n.file.split('/').pop()})`
+              label: `${n.name}\n${shortFile}`
             }
           });
         });
@@ -501,16 +529,16 @@
           applyClaimToNode(c);
         });
 
-        // Re-run hierarchical layout
+        // Re-run hierarchical layout and fit to full canvas
         const l = cy.layout({
           name: 'breadthfirst',
           directed: true,
-          padding: 40,
-          spacingFactor: 1.5,
+          padding: 60,
+          spacingFactor: 1.6,
           animate: false
         });
         l.run();
-        cy.fit(null, 50);
+        cy.fit(undefined, 60);
 
         // If collisions exist, display top banner and red path immediately
         if (data.collisions && data.collisions.length > 0) {
@@ -518,14 +546,24 @@
           const pathParts = col.path_text ? col.path_text.split(" -> ") : [];
           if (pathParts.length > 0) {
             highlightCollision(pathParts);
-            showBanner(`🚨 ${col.verdict}: Agent '${col.agent_a || 'agent-2'}' and Agent '${col.agent_b || 'agent-1'}' collision along path`, col.verdict === 'BLOCK');
+            const hops = Math.max(0, pathParts.length - 1);
+            const agentA = col.agent_a || 'agent-2';
+            const agentB = col.agent_b || 'agent-1';
+            const actionText = col.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
+            showBanner(`🚨 ${col.verdict}: ${agentA} ${actionText} ${agentB} | ${col.path_text} (${hops} hops)`, col.verdict === 'BLOCK');
           }
+
+          // Populate feed cards (oldest to newest, so newest ends on top)
           data.collisions.slice().reverse().forEach(c => {
             const parts = c.path_text ? c.path_text.split(" -> ") : [];
+            const hops = Math.max(0, parts.length - 1);
             addFeedCard({
               verdict: c.verdict,
+              agents: [c.agent_a || 'agent-1', c.agent_b || 'agent-2'],
               reason: `${c.verdict} collision: Agent '${c.agent_a}' and Agent '${c.agent_b}'`,
               path: parts,
+              hops: hops,
+              precedent_count: c.precedent_count || 0,
               timestamp: c.timestamp
             });
           });
@@ -536,29 +574,27 @@
       }
     }
 
-    // Decorate a node with its claim status badge
+    // Decorate a node with its claim status badge (14px+ minimum, 18px base)
     function applyClaimToNode(claim) {
       const node = cy.getElementById(claim.symbol_id);
       if (!node || node.empty()) return;
 
       node.removeClass('status-active status-waiting status-done status-expired');
 
+      const baseName = node.data('name') || claim.symbol_id.split('::').pop();
       if (claim.status === 'active') {
         node.addClass('status-active');
-        const baseName = node.data('name') || claim.symbol_id.split('::').pop();
         node.data('label', `🟢 ${claim.agent_id}\n${baseName}\n[ACTIVE]`);
       } else if (claim.status === 'waiting') {
         node.addClass('status-waiting');
-        const baseName = node.data('name') || claim.symbol_id.split('::').pop();
         node.data('label', `🟡 ${claim.agent_id}\n${baseName}\n[WAITING]`);
       } else {
-        const baseName = node.data('name') || claim.symbol_id.split('::').pop();
-        const fileName = (node.data('file') || '').split('/').pop();
-        node.data('label', `${baseName}\n(${fileName})`);
+        const fileName = node.data('file') || '';
+        node.data('label', `${baseName}\n${fileName}`);
       }
     }
 
-    // Highlight the collision path across nodes and edges
+    // Highlight the collision path across nodes and edges (6px red path, dim others)
     function highlightCollision(path) {
       if (!path || path.length === 0) return;
 
@@ -586,40 +622,48 @@
       }
     }
 
-    // Display prominent top collision banner
+    // Display prominent top collision banner (never truncate, wrap cleanly)
     function showBanner(message, isBlock = true) {
       const banner = document.getElementById('alert-banner');
       banner.style.display = 'block';
-      banner.style.background = isBlock ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)';
+      banner.style.background = isBlock ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)';
       banner.style.borderColor = isBlock ? 'var(--block)' : 'var(--warn)';
       banner.style.color = isBlock ? '#fca5a5' : '#fde68a';
       banner.innerText = message;
     }
 
-    // Add card to live verdict feed
+    // Add card to live verdict feed with full details and precedent count
     function addFeedCard(event) {
       const feedList = document.getElementById('feed-list');
-      if (eventCount === 0) {
-        feedList.innerHTML = '';
+      const placeholder = document.getElementById('empty-feed-placeholder');
+      if (placeholder) {
+        placeholder.remove();
       }
+
       eventCount++;
       document.getElementById('feed-counter').innerText = `${eventCount} events`;
 
       const card = document.createElement('div');
-      card.className = `feed-card verdict-${event.verdict || (event.status ? event.status.toUpperCase() : 'SAFE')}`;
+      const verdict = event.verdict || (event.status ? event.status.toUpperCase() : 'SAFE');
+      card.className = `feed-card verdict-${verdict}`;
 
-      const timeStr = new Date().toLocaleTimeString();
-      const verdict = event.verdict || (event.status ? event.status.toUpperCase() : 'CLAIM');
+      const timeStr = event.timestamp ? new Date(event.timestamp * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
       const badgeClass = (verdict === 'BLOCK' ? 'badge-BLOCK' : (verdict === 'WARN' ? 'badge-WARN' : 'badge-SAFE'));
 
       let precedentText = '';
       if (event.precedent_count && event.precedent_count > 0) {
-        precedentText = `<div class="card-precedent">⚡ Precedent: Collided ${event.precedent_count} times before</div>`;
+        precedentText = `<div class="card-precedent">⚡ Seen ${event.precedent_count} time${event.precedent_count > 1 ? 's' : ''} before</div>`;
       }
 
       let pathHtml = '';
       if (event.path && event.path.length > 0) {
-        pathHtml = `<div class="card-path">Path: ${event.path.join(' ➔ ')}</div>`;
+        const hopsText = event.hops !== undefined ? ` (${event.hops} hop${event.hops !== 1 ? 's' : ''})` : '';
+        pathHtml = `<div class="card-path">${event.path.join(' ➔ ')}${hopsText}</div>`;
+      }
+
+      let agentsText = '';
+      if (event.agents && event.agents.length >= 2) {
+        agentsText = `<div style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Agents: ${event.agents[0]} vs ${event.agents[1]}</div>`;
       }
 
       card.innerHTML = `
@@ -627,6 +671,7 @@
           <span class="badge ${badgeClass}">${verdict}</span>
           <span class="card-time">${timeStr}</span>
         </div>
+        ${agentsText}
         <div class="card-reason">${event.reason || `Agent '${event.agent_id}' claimed '${event.symbol_id}' (${event.status})`}</div>
         ${pathHtml}
         ${precedentText}
@@ -635,7 +680,7 @@
       feedList.prepend(card);
     }
 
-    // Connect to Server-Sent Events (SSE) stream
+    // Connect to Server-Sent Events (SSE) stream for live real-time updates
     function setupSSE() {
       const evtSource = new EventSource('/events');
 
@@ -651,11 +696,17 @@
           if (data.type === 'claim_created' || data.type === 'claim_status_changed') {
             applyClaimToNode(data);
             addFeedCard(data);
+            cy.fit(undefined, 60);
           } else if (data.type === 'collision') {
             highlightCollision(data.path);
-            const bannerMsg = `🚨 ${data.verdict}: ${data.reason}`;
+            const actionText = data.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
+            const agentA = data.agents ? data.agents[0] : 'agent-2';
+            const agentB = data.agents ? data.agents[1] : 'agent-1';
+            const pathText = data.path ? data.path.join(' -> ') : '';
+            const bannerMsg = `🚨 ${data.verdict}: ${agentA} ${actionText} ${agentB} | ${pathText} (${data.hops} hops)`;
             showBanner(bannerMsg, data.verdict === 'BLOCK');
             addFeedCard(data);
+            cy.fit(undefined, 60);
           }
 
         } catch (err) {
@@ -688,7 +739,7 @@
 
         // Clear feed
         document.getElementById('feed-list').innerHTML = `
-          <div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+          <div id="empty-feed-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
             Demo reset. Awaiting new agent claims...
           </div>
         `;

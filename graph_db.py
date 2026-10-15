@@ -134,7 +134,9 @@ CREATE (col:Collision {
     path_text: $path_text,
     timestamp: $timestamp,
     agent_a: $agent_a,
-    agent_b: $agent_b
+    agent_b: $agent_b,
+    sym_a: $sym_a,
+    sym_b: $sym_b
 })
 WITH col
 MATCH (a:Symbol {id: $sym_a}), (b:Symbol {id: $sym_b})
@@ -177,7 +179,8 @@ RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
 GET_ALL_COLLISIONS_QUERY = """
 MATCH (col:Collision)
 RETURN col.id AS id, col.verdict AS verdict, col.path_text AS path_text,
-       col.timestamp AS timestamp, col.agent_a AS agent_a, col.agent_b AS agent_b
+       col.timestamp AS timestamp, col.agent_a AS agent_a, col.agent_b AS agent_b,
+       col.sym_a AS sym_a, col.sym_b AS sym_b
 ORDER BY col.timestamp DESC
 """
 
@@ -627,12 +630,20 @@ class GraphDB:
                 if blocker_id:
                     blocked_by.append({"from": c_id, "to": blocker_id})
 
+            recent_cols = self.get_recent_collisions(limit=10)
+            for c in recent_cols:
+                path_parts = c["path_text"].split(" -> ") if c.get("path_text") else []
+                sym_a = c.get("sym_a") or (path_parts[0] if path_parts else "")
+                sym_b = c.get("sym_b") or (path_parts[-1] if path_parts else "")
+                prec = self.get_precedent(sym_a, sym_b, before_time=c.get("timestamp"))
+                c["precedent_count"] = prec.get("count", 0)
+
             return {
                 "nodes": nodes,
                 "edges": edges,
                 "claims": claims,
                 "blocked_by": blocked_by,
-                "collisions": self.get_recent_collisions(limit=10)
+                "collisions": recent_cols
             }
 
         # In-memory fallback
@@ -659,12 +670,20 @@ class GraphDB:
         for c in self._mem_claims.values():
             claims.append(dict(c))
 
+        recent_mem_cols = self.get_recent_collisions(limit=10)
+        for c in recent_mem_cols:
+            path_parts = c["path_text"].split(" -> ") if c.get("path_text") else []
+            sym_a = c.get("sym_a") or (path_parts[0] if path_parts else "")
+            sym_b = c.get("sym_b") or (path_parts[-1] if path_parts else "")
+            prec = self.get_precedent(sym_a, sym_b, before_time=c.get("timestamp"))
+            c["precedent_count"] = prec.get("count", 0)
+
         return {
             "nodes": nodes,
             "edges": edges,
             "claims": claims,
             "blocked_by": blocked_by,
-            "collisions": self.get_recent_collisions(limit=10)
+            "collisions": recent_mem_cols
         }
 
     def get_recent_collisions(self, limit: int = 50) -> List[Dict[str, Any]]:
@@ -679,7 +698,9 @@ class GraphDB:
                     "path_text": row[2],
                     "timestamp": row[3],
                     "agent_a": row[4],
-                    "agent_b": row[5]
+                    "agent_b": row[5],
+                    "sym_a": row[6] if len(row) > 6 else None,
+                    "sym_b": row[7] if len(row) > 7 else None
                 })
             return results
 
