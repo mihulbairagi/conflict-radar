@@ -488,7 +488,7 @@ class GraphDB:
         hops_int = int(max_hops)
         q_shortest = f"""
         MATCH (a:Symbol {{id: $start_id}}), (b:Symbol {{id: $end_id}})
-        MATCH p = shortestPath((a)-[:CALLS*1..{hops_int}]->(b))
+        WITH shortestPath((a)-[:CALLS*1..{hops_int}]->(b)) AS p
         RETURN [node IN nodes(p) | node.id] AS path_nodes
         LIMIT 1
         """
