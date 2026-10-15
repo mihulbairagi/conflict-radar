@@ -249,7 +249,7 @@ python indexer.py ./sample_repo
 *Output will confirm 4 files, 9 symbols, and 4 call edges indexed.*
 
 ### 4. Run the Full Test Suite
-Verify that all 34 tests pass against the real FalkorDB instance:
+Verify that all 41 tests pass against the real FalkorDB instance:
 ```bash
 pytest -v -rs
 ```
@@ -275,7 +275,7 @@ Press `[ENTER]` to step through each scenario while observing live updates in yo
 Conflict Radar speaks standard JSON-RPC over the official Model Context Protocol (MCP). Any MCP-compliant coding assistant can connect directly.
 
 ### Claude Code / Cursor / Desktop Configuration
-Add the server definition to your project `.mcp.json` or `claude_desktop_config.json`:
+A root [CLAUDE.md](CLAUDE.md) and [.mcp.json](.mcp.json) are provided out-of-the-box:
 ```json
 {
   "mcpServers": {
@@ -288,15 +288,17 @@ Add the server definition to your project `.mcp.json` or `claude_desktop_config.
 ```
 *Note: If your virtual environment is not globally active on PATH, specify your environment's Python interpreter path (e.g. `.venv/Scripts/python.exe` on Windows or `.venv/bin/python` on Linux/macOS).*
 
-### Agent System Prompt / Rule Injection
-Add the following instruction to your agent's system prompt or `.cursorrules` / `AGENT.md`:
-```markdown
-Before editing any function or class:
-1. Call MCP tool `claim` with your `agent_id`, the qualified `symbol_id` (e.g. "validator.py::validate_input"), and your `change_type` ("BODY" or "SIGNATURE").
-2. If the verdict is "BLOCK", do NOT edit the file. Call `check(claim_id)` periodically until your claim becomes ACTIVE.
-3. If the verdict is "SAFE" or "WARN", proceed with your edits.
-4. When finished editing, call `release(claim_id)` to unblock waiting peers.
+### Live Agent Test Harness
+To test a live agent (such as Claude Code) against a background lock in FalkorDB:
+```bash
+python scripts/test_live_claude.py
 ```
+This acquires a background lock for an upstream peer agent, prompts Claude Code with a breaking change, captures its blocked waiting state, and releases the lock on keypress to observe reactive promotion.
+
+### Documentation & Evaluation Guides
+- **Scripted MCP Walkthrough:** [docs/SCRIPTED_MCP_WALKTHROUGH.md](docs/SCRIPTED_MCP_WALKTHROUGH.md) (Step-by-step raw JSON-RPC tool exchange trace).
+- **Video Recording Script:** [docs/VIDEO_SCRIPT.md](docs/VIDEO_SCRIPT.md) (3-minute demo script with Hinglish & English tracks).
+- **Judge Defense & Q&A Guide:** [docs/JUDGES_DEFENSE_GUIDE.md](docs/JUDGES_DEFENSE_GUIDE.md) (Architectural defense, trade-offs, and FalkorDB technical rationale).
 
 ### Available MCP Tools
 - **`claim(agent_id: str, symbol_id: str, change_type: str = "BODY") -> dict`**
