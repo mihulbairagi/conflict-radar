@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conflict Radar - Live Multi-Agent Coordination Dashboard</title>
+  <!-- Cytoscape.js for robust graph visualization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+  <!-- Dagre layout for clear hierarchical dependency visualization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --panel-border: #1f2937;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --safe: #10b981;
+      --warn: #f59e0b;
+      --block: #ef4444;
+      --accent: #3b82f6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Top Navigation Bar */
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--panel-border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .radar-icon {
+      font-size: 24px;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.8; }
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #fff;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--safe);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--safe);
+      border-radius: 50%;
+    }
+
+    .btn-reset {
+      background: #1f2937;
+      color: #f3f4f6;
+      border: 1px solid #374151;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-reset:hover {
+      background: #374151;
+      color: #fff;
+      border-color: #4b5563;
+    }
+
+    /* Collision Alert Banner */
+    #alert-banner {
+      display: none;
+      background: rgba(239, 68, 68, 0.15);
+      border-bottom: 2px solid var(--block);
+      padding: 12px 24px;
+      color: #fca5a5;
+      font-size: 16px;
+      font-weight: 700;
+      text-align: center;
+      animation: slideDown 0.3s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Main Container: Split View */
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 61px);
+      position: relative;
+    }
+
+    /* Graph Canvas Area */
+    #cy-container {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, #111827 0%, #090d16 100%);
+    }
+
+    #cy {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Sidebar Area */
+    .sidebar {
+      width: 420px;
+      background: var(--card-bg);
+      border-left: 1px solid var(--panel-border);
+      display: flex;
+      flex-direction: column;
+      z-index: 5;
+    }
+
+    /* Legend Box */
+    .legend-box {
+      padding: 16px;
+      border-bottom: 1px solid var(--panel-border);
+      background: rgba(17, 24, 39, 0.6);
+    }
+
+    .legend-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .legend-items {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #d1d5db;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .swatch-active { background: var(--safe); }
+    .swatch-waiting { background: var(--warn); }
+    .swatch-block { background: var(--block); }
+    .swatch-neutral { background: #4b5563; }
+
+    /* Live Verdict Feed */
+    .feed-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .feed-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--panel-border);
+      font-size: 13px;
+      font-weight: 700;
+      color: #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .feed-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .feed-card {
+      background: #1a2234;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 12px;
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .feed-card.verdict-BLOCK {
+      border-left: 4px solid var(--block);
+      background: rgba(239, 68, 68, 0.08);
+    }
+
+    .feed-card.verdict-WARN {
+      border-left: 4px solid var(--warn);
+      background: rgba(245, 158, 11, 0.08);
+    }
+
+    .feed-card.verdict-SAFE {
+      border-left: 4px solid var(--safe);
+      background: rgba(16, 185, 129, 0.08);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .badge-BLOCK { background: var(--block); color: #fff; }
+    .badge-WARN { background: var(--warn); color: #000; }
+    .badge-SAFE { background: var(--safe); color: #000; }
+
+    .card-time {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .card-reason {
+      font-size: 13px;
+      color: #f3f4f6;
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+
+    .card-path {
+      font-size: 12px;
+      font-family: monospace;
+      color: #93c5fd;
+      background: rgba(59, 130, 246, 0.1);
+      padding: 4px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 4px;
+    }
+
+    .card-precedent {
+      font-size: 11px;
+      color: #fbbf24;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header>
+    <div class="brand">
+      <div class="radar-icon">📡</div>
+      <div>
+        <div class="title">CONFLICT RADAR</div>
+        <div class="subtitle">Autonomous AI Traffic Controller & FalkorDB Call Graph</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="status-badge" id="sse-status">
+        <div class="status-dot"></div>
+        <span>Live Events Active</span>
+      </div>
+      <button class="btn-reset" onclick="resetDemo()">Reset Demo</button>
+    </div>
+  </header>
+
+  <!-- Banner for BLOCK or WARN incidents -->
+  <div id="alert-banner"></div>
+
+  <!-- Main Workspace -->
+  <div class="main-container">
+    <!-- Cytoscape Graph Canvas -->
+    <div id="cy-container">
+      <div id="cy"></div>
+    </div>
+
+    <!-- Sidebar: Legend & Live Event Feed -->
+    <div class="sidebar">
+      <div class="legend-box">
+        <div class="legend-title">Graph Legend</div>
+        <div class="legend-items">
+          <div class="legend-item"><div class="legend-swatch swatch-active"></div> <span>ACTIVE Claim</span></div>
+          <div class="legend-item"><div class="legend-swatch swatch-waiting"></div> <span>WAITING Claim</span></div>
+          <div class="legend-item"><div class="legend-swatch swatch-block"></div> <span>Collision Path</span></div>
+          <div class="legend-item"><div class="legend-swatch swatch-neutral"></div> <span>Code Symbol</span></div>
+        </div>
+      </div>
+
+      <div class="feed-container">
+        <div class="feed-header">
+          <span>Live Verdict & Claim Stream</span>
+          <span id="feed-counter" style="color: var(--text-muted); font-weight: normal; font-size: 12px;">0 events</span>
+        </div>
+        <div class="feed-list" id="feed-list">
+          <div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+            Awaiting agent claims...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let cy = null;
+    let eventCount = 0;
+
+    // Initialize Cytoscape with readable, high-contrast styles for video recording
+    function initCytoscape() {
+      cy = cytoscape({
+        container: document.getElementById('cy'),
+        style: [
+          // Base Symbol Node
+          {
+            selector: 'node',
+            style: {
+              'label': 'data(label)',
+              'text-valign': 'center',
+              'text-halign': 'center',
+              'font-size': '15px',
+              'font-weight': 'bold',
+              'color': '#f3f4f6',
+              'background-color': '#1f2937',
+              'border-width': 2,
+              'border-color': '#4b5563',
+              'shape': 'round-rectangle',
+              'width': 'label',
+              'height': 'label',
+              'padding': '14px',
+              'text-max-width': '220px',
+              'text-wrap': 'wrap'
+            }
+          },
+          // Active Claim (Green)
+          {
+            selector: 'node.status-active',
+            style: {
+              'background-color': '#064e3b',
+              'border-color': '#10b981',
+              'border-width': 4,
+              'color': '#ecfdf5'
+            }
+          },
+          // Waiting Claim (Amber/Orange)
+          {
+            selector: 'node.status-waiting',
+            style: {
+              'background-color': '#78350f',
+              'border-color': '#f59e0b',
+              'border-width': 4,
+              'color': '#fffbeb'
+            }
+          },
+          // Blocked / In Conflict (Red Highlight)
+          {
+            selector: 'node.conflict-node',
+            style: {
+              'border-color': '#ef4444',
+              'border-width': 5,
+              'shadow-blur': 15,
+              'shadow-color': '#ef4444',
+              'shadow-opacity': 0.8
+            }
+          },
+          // Directed CALLS Edge
+          {
+            selector: 'edge',
+            style: {
+              'width': 2,
+              'line-color': '#4b5563',
+              'target-arrow-color': '#4b5563',
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'arrow-scale': 1.2
+            }
+          },
+          // Collision Path Edge (Thick Red)
+          {
+            selector: 'edge.collision-path',
+            style: {
+              'width': 6,
+              'line-color': '#ef4444',
+              'target-arrow-color': '#ef4444',
+              'line-style': 'solid',
+              'arrow-scale': 1.6,
+              'z-index': 999
+            }
+          }
+        ],
+        layout: {
+          name: 'dagre',
+          rankDir: 'TB',
+          nodeSep: 60,
+          rankSep: 80,
+          animate: true,
+          animationDuration: 500
+        }
+      });
+    }
+
+    // Fetch full graph topology from FastAPI /graph endpoint
+    async function loadGraph() {
+      try {
+        const res = await fetch('/graph');
+        const data = await res.json();
+
+        const elements = [];
+
+        // Build node elements
+        (data.nodes || []).forEach(n => {
+          elements.push({
+            data: {
+              id: n.id,
+              name: n.name,
+              file: n.file,
+              kind: n.kind,
+              label: `${n.name}\n(${n.file.split('/').pop()})`
+            }
+          });
+        });
+
+        // Build CALLS edge elements
+        (data.edges || []).forEach(e => {
+          elements.push({
+            data: {
+              id: `edge_${e.from}_${e.to}`,
+              source: e.from,
+              target: e.to
+            }
+          });
+        });
+
+        cy.elements().remove();
+        cy.add(elements);
+
+        // Apply claims styling
+        (data.claims || []).forEach(c => {
+          applyClaimToNode(c);
+        });
+
+        // Re-run layout
+        cy.layout({
+          name: 'dagre',
+          rankDir: 'TB',
+          nodeSep: 60,
+          rankSep: 80,
+          animate: true,
+          animationDuration: 400
+        }).run();
+
+      } catch (err) {
+        console.error("Failed to load graph:", err);
+      }
+    }
+
+    // Decorate a node with its claim status badge
+    function applyClaimToNode(claim) {
+      const node = cy.getElementById(claim.symbol_id);
+      if (!node || node.empty()) return;
+
+      node.removeClass('status-active status-waiting status-done status-expired');
+
+      if (claim.status === 'active') {
+        node.addClass('status-active');
+        const baseName = node.data('name') || claim.symbol_id.split('::').pop();
+        node.data('label', `🟢 ${claim.agent_id}\n${baseName}\n[ACTIVE]`);
+      } else if (claim.status === 'waiting') {
+        node.addClass('status-waiting');
+        const baseName = node.data('name') || claim.symbol_id.split('::').pop();
+        node.data('label', `🟡 ${claim.agent_id}\n${baseName}\n[WAITING]`);
+      } else {
+        const baseName = node.data('name') || claim.symbol_id.split('::').pop();
+        const fileName = (node.data('file') || '').split('/').pop();
+        node.data('label', `${baseName}\n(${fileName})`);
+      }
+    }
+
+    // Highlight the collision path across nodes and edges
+    function highlightCollision(path) {
+      if (!path || path.length === 0) return;
+
+      // Clear previous collision highlights
+      cy.elements().removeClass('conflict-node collision-path');
+
+      for (let i = 0; i < path.length; i++) {
+        const sym = path[i];
+        const node = cy.getElementById(sym);
+        if (node && !node.empty()) {
+          node.addClass('conflict-node');
+        }
+
+        if (i < path.length - 1) {
+          const nextSym = path[i + 1];
+          // Check edge in forward or reverse
+          let edge = cy.edges(`[source = "${sym}"][target = "${nextSym}"]`);
+          if (edge.empty()) {
+            edge = cy.edges(`[source = "${nextSym}"][target = "${sym}"]`);
+          }
+          if (!edge.empty()) {
+            edge.addClass('collision-path');
+          }
+        }
+      }
+    }
+
+    // Display prominent top collision banner
+    function showBanner(message, isBlock = true) {
+      const banner = document.getElementById('alert-banner');
+      banner.style.display = 'block';
+      banner.style.background = isBlock ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)';
+      banner.style.borderColor = isBlock ? 'var(--block)' : 'var(--warn)';
+      banner.style.color = isBlock ? '#fca5a5' : '#fde68a';
+      banner.innerText = message;
+    }
+
+    // Add card to live verdict feed
+    function addFeedCard(event) {
+      const feedList = document.getElementById('feed-list');
+      if (eventCount === 0) {
+        feedList.innerHTML = '';
+      }
+      eventCount++;
+      document.getElementById('feed-counter').innerText = `${eventCount} events`;
+
+      const card = document.createElement('div');
+      card.className = `feed-card verdict-${event.verdict || (event.status ? event.status.toUpperCase() : 'SAFE')}`;
+
+      const timeStr = new Date().toLocaleTimeString();
+      const verdict = event.verdict || (event.status ? event.status.toUpperCase() : 'CLAIM');
+      const badgeClass = `badge-${verdict}` in { 'badge-BLOCK': 1, 'badge-WARN': 1, 'badge-SAFE': 1 } ? `badge-${verdict}` : 'badge-SAFE';
+
+      let precedentText = '';
+      if (event.precedent_count && event.precedent_count > 0) {
+        precedentText = `<div class="card-precedent">⚡ Precedent: Collided ${event.precedent_count} times before</div>`;
+      }
+
+      let pathHtml = '';
+      if (event.path && event.path.length > 0) {
+        pathHtml = `<div class="card-path">Path: ${event.path.join(' ➔ ')}</div>`;
+      }
+
+      card.innerHTML = `
+        <div class="card-top">
+          <span class="badge ${badgeClass}">${verdict}</span>
+          <span class="card-time">${timeStr}</span>
+        </div>
+        <div class="card-reason">${event.reason || `Agent '${event.agent_id}' claimed '${event.symbol_id}' (${event.status})`}</div>
+        ${pathHtml}
+        ${precedentText}
+      `;
+
+      feedList.prepend(card);
+    }
+
+    // Connect to Server-Sent Events (SSE) stream
+    function setupSSE() {
+      const evtSource = new EventSource('/events');
+
+      evtSource.onmessage = function(e) {
+        try {
+          const data = JSON.parse(e.data);
+
+          if (data.type === 'init') {
+            console.log("SSE connected:", data.message);
+            return;
+          }
+
+          if (data.type === 'claim_created' || data.type === 'claim_status_changed') {
+            applyClaimToNode(data);
+            addFeedCard(data);
+          } else if (data.type === 'collision') {
+            highlightCollision(data.path);
+            const bannerMsg = `🚨 ${data.verdict}: ${data.reason}`;
+            showBanner(bannerMsg, data.verdict === 'BLOCK');
+            addFeedCard(data);
+          }
+
+        } catch (err) {
+          console.error("Error processing SSE message:", err);
+        }
+      };
+
+      evtSource.onerror = function() {
+        const badge = document.getElementById('sse-status');
+        badge.innerHTML = '<div class="status-dot" style="background:#ef4444"></div><span>Connecting...</span>';
+        badge.style.color = '#ef4444';
+      };
+
+      evtSource.onopen = function() {
+        const badge = document.getElementById('sse-status');
+        badge.innerHTML = '<div class="status-dot" style="background:#10b981"></div><span>Live Events Active</span>';
+        badge.style.color = '#10b981';
+      };
+    }
+
+    // Reset Demo Button Handler
+    async function resetDemo() {
+      try {
+        const res = await fetch('/demo/reset', { method: 'POST' });
+        const data = await res.json();
+        console.log("Reset result:", data);
+
+        // Hide alert banner
+        document.getElementById('alert-banner').style.display = 'none';
+
+        // Clear feed
+        document.getElementById('feed-list').innerHTML = `
+          <div style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+            Demo reset. Awaiting new agent claims...
+          </div>
+        `;
+        eventCount = 0;
+        document.getElementById('feed-counter').innerText = '0 events';
+
+        // Reload fresh graph without claims/collisions
+        await loadGraph();
+
+      } catch (err) {
+        alert("Failed to reset demo: " + err);
+      }
+    }
+
+    // Page Load Setup
+    window.addEventListener('DOMContentLoaded', () => {
+      initCytoscape();
+      loadGraph();
+      setupSSE();
+    });
+  </script>
+</body>
+</html>

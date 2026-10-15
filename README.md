@@ -34,7 +34,16 @@ Start the MCP server over standard I/O for AI agents:
 python mcp_server.py
 ```
 
-### 4. Connecting AI Coding Agents (Claude Code / Antigravity)
+### 4. Run the Live Visual Dashboard
+Start the real-time FastAPI dashboard with Cytoscape.js and Server-Sent Events (SSE):
+```bash
+python dashboard.py
+```
+Open **`http://localhost:8000`** in your browser to view the live multi-agent graph, claim statuses, red collision path highlights, and real-time verdict feed.
+
+Click **Reset Demo** in the top navigation bar at any time to clear transient claims and collisions while keeping the codebase graph intact.
+
+### 5. Connecting AI Coding Agents (Claude Code / Antigravity)
 
 Add Conflict Radar to your agent's MCP configuration file (e.g. `claude_desktop_config.json` or your project `.mcp.json`):
 

@@ -151,6 +151,44 @@ WHERE col.timestamp < $before_time
 RETURN count(col) AS count, max(col.timestamp) AS last_seen
 """
 
+# Retrieves all Symbol nodes for dashboard visualization.
+GET_CODE_GRAPH_SYMBOLS_QUERY = """
+MATCH (s:Symbol)
+RETURN s.id AS id, s.name AS name, s.file AS file, s.kind AS kind
+"""
+
+# Retrieves all directed CALLS relationships between symbols.
+GET_CODE_GRAPH_CALLS_QUERY = """
+MATCH (caller:Symbol)-[:CALLS]->(callee:Symbol)
+RETURN caller.id AS from_id, callee.id AS to_id
+"""
+
+# Retrieves all claims with status, agent, touched symbol, and any blocker.
+GET_ALL_CLAIMS_FOR_DASHBOARD_QUERY = """
+MATCH (c:Claim)
+OPTIONAL MATCH (c)-[:BLOCKED_BY]->(blocker:Claim)
+RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
+       c.change_type AS change_type, c.status AS status,
+       c.created_at AS created_at, c.updated_at AS updated_at,
+       blocker.id AS blocker_id
+"""
+
+# Retrieves recent collision events ordered chronologically.
+GET_ALL_COLLISIONS_QUERY = """
+MATCH (col:Collision)
+RETURN col.id AS id, col.verdict AS verdict, col.path_text AS path_text,
+       col.timestamp AS timestamp, col.agent_a AS agent_a, col.agent_b AS agent_b
+ORDER BY col.timestamp DESC
+"""
+
+# Deletes only transient Claims and Collisions for repeated demo recordings, keeping code graph intact.
+RESET_DEMO_CLAIMS_QUERY = """
+MATCH (c:Claim) DETACH DELETE c
+"""
+RESET_DEMO_COLLISIONS_QUERY = """
+MATCH (col:Collision) DETACH DELETE col
+"""
+
 
 class GraphDB:
     """FalkorDB Client Wrapper for Conflict Radar."""
@@ -541,3 +579,122 @@ class GraphDB:
                     last_seen = col["timestamp"]
 
         return {"count": cnt, "last_seen": last_seen}
+
+    # --- Dashboard & Demo Reset APIs ---
+
+    def get_full_graph(self) -> Dict[str, Any]:
+        """Extract nodes, edges, claims, and blocked_by relationships for the dashboard."""
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        claims: List[Dict[str, Any]] = []
+        blocked_by: List[Dict[str, Any]] = []
+
+        if self.is_connected and self.graph:
+            try:
+                # 1. Symbols
+                sym_res = self.graph.query(GET_CODE_GRAPH_SYMBOLS_QUERY)
+                for row in sym_res.result_set:
+                    nodes.append({
+                        "id": row[0],
+                        "name": row[1],
+                        "file": row[2],
+                        "kind": row[3] or "function"
+                    })
+
+                # 2. CALLS Edges
+                calls_res = self.graph.query(GET_CODE_GRAPH_CALLS_QUERY)
+                for row in calls_res.result_set:
+                    edges.append({
+                        "from": row[0],
+                        "to": row[1],
+                        "type": "CALLS"
+                    })
+
+                # 3. Claims
+                claim_res = self.graph.query(GET_ALL_CLAIMS_FOR_DASHBOARD_QUERY)
+                for row in claim_res.result_set:
+                    c_id, agent_id, sym_id, change_type, status, created_at, updated_at, blocker_id = row
+                    claims.append({
+                        "id": c_id,
+                        "agent_id": agent_id,
+                        "symbol_id": sym_id,
+                        "change_type": change_type,
+                        "status": status,
+                        "created_at": created_at,
+                        "updated_at": updated_at,
+                        "blocked_by": blocker_id
+                    })
+                    if blocker_id:
+                        blocked_by.append({"from": c_id, "to": blocker_id})
+
+                return {
+                    "nodes": nodes,
+                    "edges": edges,
+                    "claims": claims,
+                    "blocked_by": blocked_by
+                }
+            except Exception:
+                pass
+
+        # In-memory fallback
+        for nid, n in self._mem_nodes.items():
+            if n.get("type") == "Symbol":
+                nodes.append({
+                    "id": n["id"],
+                    "name": n["name"],
+                    "file": n["file"],
+                    "kind": n.get("kind", "function")
+                })
+
+        for e in self._mem_edges:
+            if e["type"] == "CALLS":
+                edges.append({"from": e["from"], "to": e["to"], "type": "CALLS"})
+            elif e["type"] == "BLOCKED_BY":
+                blocked_by.append({"from": e["from"], "to": e["to"]})
+
+        for c in self._mem_claims.values():
+            claims.append(dict(c))
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "claims": claims,
+            "blocked_by": blocked_by
+        }
+
+    def get_recent_collisions(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Retrieve recent collision records ordered chronologically descending."""
+        if self.is_connected and self.graph:
+            try:
+                res = self.graph.query(GET_ALL_COLLISIONS_QUERY)
+                results = []
+                for row in res.result_set[:limit]:
+                    results.append({
+                        "id": row[0],
+                        "verdict": row[1],
+                        "path_text": row[2],
+                        "timestamp": row[3],
+                        "agent_a": row[4],
+                        "agent_b": row[5]
+                    })
+                return results
+            except Exception:
+                pass
+
+        # In-memory sorted descending
+        sorted_cols = sorted(self._mem_collisions, key=lambda c: c.get("timestamp", 0), reverse=True)
+        return sorted_cols[:limit]
+
+    def reset_demo_state(self) -> Dict[str, Any]:
+        """Reset only transient Claims and Collisions for repeated demo recordings."""
+        if self.is_connected and self.graph:
+            try:
+                self.graph.query(RESET_DEMO_CLAIMS_QUERY)
+                self.graph.query(RESET_DEMO_COLLISIONS_QUERY)
+            except Exception:
+                pass
+
+        self._mem_claims.clear()
+        self._mem_collisions.clear()
+        self._mem_edges = [e for e in self._mem_edges if e.get("type") in ("CONTAINS", "CALLS")]
+        return {"status": "ok", "message": "Demo state reset: claims and collisions cleared, code graph preserved."}
