@@ -47,7 +47,9 @@ def claim(agent_id: str, symbol_id: str, change_type: str = "BODY") -> Dict[str,
         "conflicting_claim_id": verdict.conflicting_claim_id,
         "path": verdict.path,
         "hops": verdict.hops,
-        "reason": verdict.reason
+        "reason": verdict.reason,
+        "precedent_count": verdict.precedent_count,
+        "last_collision_time": verdict.last_collision_time
     }
 
 

@@ -53,7 +53,8 @@ CREATE (c:Claim {
     symbol_id: $symbol_id,
     change_type: $change_type,
     status: $status,
-    created_at: $created_at
+    created_at: $created_at,
+    updated_at: $updated_at
 })
 CREATE (a)-[:MADE]->(c)
 CREATE (c)-[:TOUCHES]->(s)
@@ -73,11 +74,22 @@ MATCH (c:Claim {id: $claim_id})-[r:BLOCKED_BY]->()
 DELETE r
 """
 
-# Updates the status of an existing claim ('active', 'waiting', 'done').
+# Updates the status of an existing claim ('active', 'waiting', 'done', 'expired') and refreshes updated_at.
 UPDATE_CLAIM_STATUS_QUERY = """
 MATCH (c:Claim {id: $claim_id})
-SET c.status = $status
+SET c.status = $status, c.updated_at = $updated_at
 RETURN c
+"""
+
+# Marks claims older than cutoff TTL as expired and deletes associated BLOCKED_BY edges.
+EXPIRE_CLAIMS_QUERY = """
+MATCH (c:Claim)
+WHERE c.status IN ['active', 'waiting'] AND c.updated_at < $cutoff
+SET c.status = 'expired'
+WITH c
+OPTIONAL MATCH (c)-[r:BLOCKED_BY]-()
+DELETE r
+RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id, c.change_type AS change_type
 """
 
 # Retrieves a single claim by its ID.
@@ -86,13 +98,13 @@ MATCH (c:Claim {id: $claim_id})
 OPTIONAL MATCH (c)-[:BLOCKED_BY]->(blocker:Claim)
 RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
        c.change_type AS change_type, c.status AS status, c.created_at AS created_at,
-       blocker.id AS blocker_id
+       blocker.id AS blocker_id, c.updated_at AS updated_at
 """
 
 # Marks a Claim as 'done' when an agent releases its modification lock.
 RELEASE_CLAIM_QUERY = """
 MATCH (c:Claim {id: $claim_id})
-SET c.status = 'done'
+SET c.status = 'done', c.updated_at = $updated_at
 RETURN c
 """
 
@@ -100,7 +112,8 @@ RETURN c
 GET_ACTIVE_CLAIMS_QUERY = """
 MATCH (c:Claim {status: 'active'})
 RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
-       c.change_type AS change_type, c.status AS status, c.created_at AS created_at
+       c.change_type AS change_type, c.status AS status, c.created_at AS created_at,
+       c.updated_at AS updated_at
 """
 
 # Retrieves all waiting claims and their blocking claim ID.
@@ -109,16 +122,19 @@ MATCH (c:Claim {status: 'waiting'})
 OPTIONAL MATCH (c)-[:BLOCKED_BY]->(blocker:Claim)
 RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
        c.change_type AS change_type, c.status AS status, c.created_at AS created_at,
-       blocker.id AS blocker_id
+       blocker.id AS blocker_id, c.updated_at AS updated_at
 """
 
-# Records a collision event between two symbols for historical precedent.
+# Records a collision event between two symbols for historical precedent,
+# storing verdict, path text, timestamp, and both agent IDs.
 RECORD_COLLISION_QUERY = """
 CREATE (col:Collision {
     id: $collision_id,
     verdict: $verdict,
     path_text: $path_text,
-    timestamp: $timestamp
+    timestamp: $timestamp,
+    agent_a: $agent_a,
+    agent_b: $agent_b
 })
 WITH col
 MATCH (a:Symbol {id: $sym_a}), (b:Symbol {id: $sym_b})
@@ -127,10 +143,11 @@ CREATE (col)-[:INVOLVED]->(b)
 RETURN col
 """
 
-# Counts prior recorded collisions involving the same two symbols.
+# Counts prior recorded collisions involving the same two symbols (order-independent).
 GET_PRECEDENT_QUERY = """
 MATCH (col:Collision)-[:INVOLVED]->(a:Symbol {id: $sym_a})
 MATCH (col)-[:INVOLVED]->(b:Symbol {id: $sym_b})
+WHERE col.timestamp < $before_time
 RETURN count(col) AS count, max(col.timestamp) AS last_seen
 """
 
@@ -221,17 +238,18 @@ class GraphDB:
 
     # --- Claims Management ---
 
-    def add_claim(self, agent_id: str, symbol_id: str, change_type: str, status: str = "active") -> str:
+    def add_claim(self, agent_id: str, symbol_id: str, change_type: str, status: str = "active", now: Optional[float] = None) -> str:
         """Create a claim for an agent with specified status ('active' or 'waiting')."""
         claim_id = f"claim_{uuid.uuid4().hex[:6]}"
-        now = time.time()
+        ts = now if now is not None else time.time()
         record = {
             "id": claim_id,
             "agent_id": agent_id,
             "symbol_id": symbol_id,
             "change_type": change_type,
             "status": status,
-            "created_at": now,
+            "created_at": ts,
+            "updated_at": ts,
             "blocked_by": None
         }
         self._mem_claims[claim_id] = record
@@ -243,7 +261,8 @@ class GraphDB:
                 "symbol_id": symbol_id,
                 "change_type": change_type,
                 "status": status,
-                "created_at": now
+                "created_at": ts,
+                "updated_at": ts
             })
         return claim_id
 
@@ -268,16 +287,52 @@ class GraphDB:
         if self.is_connected and self.graph:
             self.graph.query(REMOVE_BLOCKED_BY_QUERY, {"claim_id": claim_id})
 
-    def update_claim_status(self, claim_id: str, status: str):
-        """Update claim status ('active', 'waiting', 'done')."""
+    def update_claim_status(self, claim_id: str, status: str, now: Optional[float] = None):
+        """Update claim status ('active', 'waiting', 'done', 'expired') and updated_at."""
+        ts = now if now is not None else time.time()
         if claim_id in self._mem_claims:
             self._mem_claims[claim_id]["status"] = status
+            self._mem_claims[claim_id]["updated_at"] = ts
 
         if self.is_connected and self.graph:
             self.graph.query(UPDATE_CLAIM_STATUS_QUERY, {
                 "claim_id": claim_id,
-                "status": status
+                "status": status,
+                "updated_at": ts
             })
+
+    def expire_stale_claims(self, cutoff: float) -> List[Dict[str, Any]]:
+        """Expire all ACTIVE or WAITING claims whose updated_at is older than cutoff."""
+        expired = []
+        # In-memory
+        for c in list(self._mem_claims.values()):
+            if c["status"] in ("active", "waiting") and c.get("updated_at", c["created_at"]) < cutoff:
+                c["status"] = "expired"
+                c["updated_at"] = cutoff
+                c["blocked_by"] = None
+                self._mem_edges = [
+                    e for e in self._mem_edges
+                    if not (e["type"] == "BLOCKED_BY" and (e["from"] == c["id"] or e["to"] == c["id"]))
+                ]
+                expired.append(dict(c))
+
+        if self.is_connected and self.graph:
+            try:
+                res = self.graph.query(EXPIRE_CLAIMS_QUERY, {"cutoff": cutoff})
+                # If connected, result set holds the expired claims
+                db_expired = []
+                for row in res.result_set:
+                    db_expired.append({
+                        "id": row[0],
+                        "agent_id": row[1],
+                        "symbol_id": row[2],
+                        "change_type": row[3],
+                        "status": "expired"
+                    })
+                return db_expired
+            except Exception:
+                pass
+        return expired
 
     def get_claim(self, claim_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a claim by its ID."""
@@ -293,19 +348,22 @@ class GraphDB:
                         "change_type": row[3],
                         "status": row[4],
                         "created_at": row[5],
-                        "blocked_by": row[6]
+                        "blocked_by": row[6],
+                        "updated_at": row[7] if len(row) > 7 else row[5]
                     }
             except Exception:
                 pass
         return self._mem_claims.get(claim_id)
 
-    def release_claim(self, claim_id: str) -> bool:
+    def release_claim(self, claim_id: str, now: Optional[float] = None) -> bool:
         """Mark a claim as 'done'."""
+        ts = now if now is not None else time.time()
         if claim_id in self._mem_claims:
             self._mem_claims[claim_id]["status"] = "done"
+            self._mem_claims[claim_id]["updated_at"] = ts
 
         if self.is_connected and self.graph:
-            self.graph.query(RELEASE_CLAIM_QUERY, {"claim_id": claim_id})
+            self.graph.query(RELEASE_CLAIM_QUERY, {"claim_id": claim_id, "updated_at": ts})
         return True
 
     def get_active_claims(self) -> List[Dict[str, Any]]:
@@ -321,7 +379,8 @@ class GraphDB:
                         "symbol_id": row[2],
                         "change_type": row[3],
                         "status": row[4],
-                        "created_at": row[5]
+                        "created_at": row[5],
+                        "updated_at": row[6] if len(row) > 6 else row[5]
                     })
                 return active
             except Exception:
@@ -425,17 +484,19 @@ class GraphDB:
 
     # --- Precedent & Collision Memory ---
 
-    def record_collision(self, sym_a: str, sym_b: str, verdict: str, path_text: str):
+    def record_collision(self, sym_a: str, sym_b: str, verdict: str, path_text: str, agent_a: str = "", agent_b: str = "", now: Optional[float] = None):
         """Record a collision event between two symbols for precedent memory."""
         col_id = f"col_{uuid.uuid4().hex[:6]}"
-        now = time.time()
+        ts = now if now is not None else time.time()
         record = {
             "id": col_id,
             "sym_a": sym_a,
             "sym_b": sym_b,
             "verdict": verdict,
             "path_text": path_text,
-            "timestamp": now
+            "agent_a": agent_a,
+            "agent_b": agent_b,
+            "timestamp": ts
         }
         self._mem_collisions.append(record)
 
@@ -447,16 +508,19 @@ class GraphDB:
                     "sym_b": sym_b,
                     "verdict": verdict,
                     "path_text": path_text,
-                    "timestamp": now
+                    "agent_a": agent_a,
+                    "agent_b": agent_b,
+                    "timestamp": ts
                 })
             except Exception:
                 pass
 
-    def get_precedent(self, sym_a: str, sym_b: str) -> Dict[str, Any]:
-        """Return count and last collision timestamp for this pair of symbols."""
+    def get_precedent(self, sym_a: str, sym_b: str, before_time: Optional[float] = None) -> Dict[str, Any]:
+        """Return count and last collision timestamp for this pair of symbols (order-independent)."""
+        cutoff = before_time if before_time is not None else float("inf")
         if self.is_connected and self.graph:
             try:
-                res = self.graph.query(GET_PRECEDENT_QUERY, {"sym_a": sym_a, "sym_b": sym_b})
+                res = self.graph.query(GET_PRECEDENT_QUERY, {"sym_a": sym_a, "sym_b": sym_b, "before_time": cutoff})
                 if res.result_set and len(res.result_set) > 0:
                     count = res.result_set[0][0] or 0
                     last_seen = res.result_set[0][1]
@@ -464,12 +528,14 @@ class GraphDB:
             except Exception:
                 pass
 
-        # In-memory precedent lookup
+        # In-memory precedent lookup (order-independent)
         cnt = 0
         last_seen = None
         for col in self._mem_collisions:
+            if col["timestamp"] >= cutoff:
+                continue
             pair = {col["sym_a"], col["sym_b"]}
-            if sym_a in pair and sym_b in pair:
+            if (sym_a == sym_b and col["sym_a"] == sym_a and col["sym_b"] == sym_b) or (sym_a != sym_b and sym_a in pair and sym_b in pair):
                 cnt += 1
                 if last_seen is None or col["timestamp"] > last_seen:
                     last_seen = col["timestamp"]

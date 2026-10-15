@@ -2,10 +2,14 @@
 
 Evaluates proposed code claims against active claims using FalkorDB call-graph
 traversal rules. Zero LLM reliance: verdicts are 100% deterministic and explainable.
+Step 5: Includes precedent collision memory and lazy claim expiry with injectable clock.
 """
 
+import os
+import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Tuple
+from datetime import datetime
+from typing import List, Optional, Dict, Any, Tuple, Callable
 from graph_db import GraphDB
 
 
@@ -18,17 +22,92 @@ class Verdict:
     path: List[str] = field(default_factory=list)
     hops: int = 0
     reason: str = ""
+    precedent_count: int = 0
+    last_collision_time: Optional[float] = None
 
 
 class ConflictRadar:
     """The central traffic controller for AI coding agents."""
 
-    def __init__(self, db: GraphDB, max_hops: int = 3):
+    def __init__(
+        self,
+        db: GraphDB,
+        max_hops: int = 3,
+        ttl_seconds: Optional[int] = None,
+        clock: Callable[[], float] = time.time
+    ):
         self.db = db
         self.max_hops = max_hops
+        self.clock = clock
+        if ttl_seconds is not None:
+            self.ttl_seconds = ttl_seconds
+        else:
+            self.ttl_seconds = int(os.environ.get("CLAIM_TTL_SECONDS", 300))
 
-    def _evaluate(self, agent_id: str, symbol_id: str, c_type: str, active_claims: List[Dict[str, Any]]) -> Tuple[str, Optional[str], List[str], int, str]:
+    def _expire_stale(self) -> List[Dict[str, Any]]:
+        """Lazy expiry: expire claims older than TTL and unblock waiting claims if active claims expired."""
+        now = self.clock()
+        cutoff = now - self.ttl_seconds
+        expired = self.db.expire_stale_claims(cutoff)
+        
+        # If any claims were expired, re-evaluate waiting claims
+        if expired:
+            self._unblock_eligible_waiters()
+        return expired
+
+    def _unblock_eligible_waiters(self) -> List[Dict[str, Any]]:
+        """Re-evaluate all WAITING claims sequentially against the active claims pool.
+        
+        If a waiting claim becomes ACTIVE, it is immediately added to the active set
+        so that downstream waiting claims are checked against it in the same pass.
+        """
+        now = self.clock()
+        unblocked: List[Dict[str, Any]] = []
+        waiting_claims = self.db.get_waiting_claims()
+        active_claims = list(self.db.get_active_claims())
+
+        for w in waiting_claims:
+            # Re-evaluate against current active pool
+            v_str, conf_id, path, hops, reason, _, _ = self._evaluate(
+                w["agent_id"], w["symbol_id"], w["change_type"], active_claims
+            )
+
+            if v_str in ("SAFE", "WARN"):
+                # Promote to active
+                self.db.update_claim_status(w["id"], "active", now=now)
+                self.db.remove_blocked_by(w["id"])
+
+                # Add to local active pool for subsequent waiting evaluations
+                promoted = dict(w)
+                promoted["status"] = "active"
+                promoted["updated_at"] = now
+                active_claims.append(promoted)
+
+                unblocked.append({
+                    "claim_id": w["id"],
+                    "agent_id": w["agent_id"],
+                    "symbol_id": w["symbol_id"],
+                    "new_status": "active",
+                    "verdict": v_str
+                })
+            else:
+                # Remains blocked; update blocker if changed
+                if conf_id and conf_id != w.get("blocked_by"):
+                    self.db.remove_blocked_by(w["id"])
+                    self.db.add_blocked_by(w["id"], conf_id)
+
+        return unblocked
+
+    def _evaluate(
+        self,
+        agent_id: str,
+        symbol_id: str,
+        c_type: str,
+        active_claims: List[Dict[str, Any]]
+    ) -> Tuple[str, Optional[str], List[str], int, str, int, Optional[float]]:
         """Internal evaluation of a proposed symbol modification against active claims."""
+        now = self.clock()
+
         for other in active_claims:
             if other["agent_id"] == agent_id:
                 continue
@@ -38,45 +117,70 @@ class ConflictRadar:
             other_symbol = other["symbol_id"]
             other_type = other["change_type"].upper()
 
-            # Condition 1: Identical Symbols (0 hops)
+            # Check Condition 1: Identical Symbols (0 hops)
             if symbol_id == other_symbol:
                 is_signature = (c_type == "SIGNATURE" or other_type == "SIGNATURE")
                 v_str = "BLOCK" if is_signature else "WARN"
                 path = [symbol_id]
+
+                # Precedent query (strictly BEFORE recording this new collision)
+                prec = self.db.get_precedent(symbol_id, other_symbol, before_time=now)
+                p_count = prec["count"]
+                p_last = prec["last_seen"]
+
                 reason = (f"Direct conflict (0 hops): Agent '{agent_id}' ({c_type}) and "
                           f"Agent '{other_agent}' ({other_type}) are editing the exact same symbol '{symbol_id}'.")
-                self.db.record_collision(symbol_id, other_symbol, v_str, f"{symbol_id} (direct)")
-                return v_str, other_id, path, 0, reason
+                if p_count > 0 and p_last:
+                    time_str = datetime.fromtimestamp(p_last).strftime("%Y-%m-%d %H:%M:%S")
+                    reason += f" These symbols have collided {p_count} times before; last on {time_str}."
 
-            # Condition 2: Multi-Hop Call Path in Either Direction (<= max_hops)
+                self.db.record_collision(
+                    symbol_id, other_symbol, v_str, f"{symbol_id} (direct)",
+                    agent_a=agent_id, agent_b=other_agent, now=now
+                )
+                return v_str, other_id, path, 0, reason, p_count, p_last
+
+            # Check Condition 2: Multi-Hop Call Path in Either Direction (<= max_hops)
             detected_path = self.db.find_call_path(symbol_id, other_symbol, max_hops=self.max_hops)
             if detected_path:
                 hops = len(detected_path) - 1
                 is_signature = (c_type == "SIGNATURE" or other_type == "SIGNATURE")
                 v_str = "BLOCK" if is_signature else "WARN"
                 path_str = " -> ".join(detected_path)
+
+                # Precedent query (strictly BEFORE recording this new collision)
+                prec = self.db.get_precedent(symbol_id, other_symbol, before_time=now)
+                p_count = prec["count"]
+                p_last = prec["last_seen"]
+
                 reason = (f"Dependency conflict ({hops} hops): Agent '{agent_id}' ({c_type}) and "
                           f"Agent '{other_agent}' ({other_type}) along call path {path_str}.")
-                self.db.record_collision(symbol_id, other_symbol, v_str, path_str)
-                return v_str, other_id, detected_path, hops, reason
+                if p_count > 0 and p_last:
+                    time_str = datetime.fromtimestamp(p_last).strftime("%Y-%m-%d %H:%M:%S")
+                    reason += f" These symbols have collided {p_count} times before; last on {time_str}."
 
-        return "SAFE", None, [], 0, f"Safe: No call-chain dependency found between Agent '{agent_id}' and active claims."
+                self.db.record_collision(
+                    symbol_id, other_symbol, v_str, path_str,
+                    agent_a=agent_id, agent_b=other_agent, now=now
+                )
+                return v_str, other_id, detected_path, hops, reason, p_count, p_last
+
+        return "SAFE", None, [], 0, f"Safe: No call-chain dependency found between Agent '{agent_id}' and active claims.", 0, None
 
     def claim(self, agent_id: str, symbol_id: str, change_type: str = "BODY") -> Verdict:
-        """Register a claim and evaluate it against other agents' active claims.
-        
-        Rule:
-        - BLOCK verdict -> stored as WAITING with a (:Claim)-[:BLOCKED_BY]->(:Claim) edge.
-        - SAFE / WARN verdict -> stored as ACTIVE.
-        - Only ACTIVE claims are compared against new claims.
-        """
+        """Register a claim and evaluate it against other agents' active claims."""
+        self._expire_stale()
+
         c_type = change_type.upper()
+        now = self.clock()
         active_claims = self.db.get_active_claims()
-        
-        v_str, conflicting_id, path, hops, reason = self._evaluate(agent_id, symbol_id, c_type, active_claims)
+
+        v_str, conflicting_id, path, hops, reason, p_count, p_last = self._evaluate(
+            agent_id, symbol_id, c_type, active_claims
+        )
 
         status = "waiting" if v_str == "BLOCK" else "active"
-        claim_id = self.db.add_claim(agent_id, symbol_id, c_type, status=status)
+        claim_id = self.db.add_claim(agent_id, symbol_id, c_type, status=status, now=now)
 
         if v_str == "BLOCK" and conflicting_id:
             self.db.add_blocked_by(claim_id, conflicting_id)
@@ -87,11 +191,15 @@ class ConflictRadar:
             conflicting_claim_id=conflicting_id,
             path=path,
             hops=hops,
-            reason=reason
+            reason=reason,
+            precedent_count=p_count,
+            last_collision_time=p_last
         )
 
     def check(self, claim_id: str) -> Dict[str, Any]:
         """Check current status of a claim and, if WAITING, return which claim blocks it."""
+        self._expire_stale()
+
         claim = self.db.get_claim(claim_id)
         if not claim:
             return {"status": "not_found", "claim_id": claim_id}
@@ -108,33 +216,12 @@ class ConflictRadar:
         return res
 
     def release(self, claim_id: str) -> Dict[str, Any]:
-        """Release a claim lock and re-evaluate waiting claims.
-        
-        Waiting claims that are now SAFE or WARN become ACTIVE.
-        """
-        self.db.release_claim(claim_id)
+        """Release a claim lock and re-evaluate waiting claims."""
+        self._expire_stale()
+        now = self.clock()
 
-        unblocked: List[Dict[str, Any]] = []
-        waiting_claims = self.db.get_waiting_claims()
-
-        for w in waiting_claims:
-            # Active claims excluding the released one
-            active_claims = [c for c in self.db.get_active_claims() if c["id"] != claim_id]
-            v_str, conf_id, path, hops, _ = self._evaluate(
-                w["agent_id"], w["symbol_id"], w["change_type"], active_claims
-            )
-
-            # If now SAFE or WARN, promote from WAITING to ACTIVE
-            if v_str in ("SAFE", "WARN"):
-                self.db.update_claim_status(w["id"], "active")
-                self.db.remove_blocked_by(w["id"])
-                unblocked.append({
-                    "claim_id": w["id"],
-                    "agent_id": w["agent_id"],
-                    "symbol_id": w["symbol_id"],
-                    "new_status": "active",
-                    "verdict": v_str
-                })
+        self.db.release_claim(claim_id, now=now)
+        unblocked = self._unblock_eligible_waiters()
 
         return {
             "status": "released",
