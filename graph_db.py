@@ -42,8 +42,8 @@ MERGE (caller)-[r:CALLS]->(callee)
 RETURN r
 """
 
-# Creates an active Claim node, linked to the Agent that made it
-# and the Symbol it touches.
+# Creates a Claim node with status ('active' or 'waiting'), linked to the Agent
+# that made it and the Symbol it touches.
 ADD_CLAIM_QUERY = """
 MERGE (a:Agent {id: $agent_id, name: $agent_id})
 MERGE (s:Symbol {id: $symbol_id})
@@ -52,12 +52,41 @@ CREATE (c:Claim {
     agent_id: $agent_id,
     symbol_id: $symbol_id,
     change_type: $change_type,
-    status: 'active',
+    status: $status,
     created_at: $created_at
 })
 CREATE (a)-[:MADE]->(c)
 CREATE (c)-[:TOUCHES]->(s)
 RETURN c
+"""
+
+# Connects a waiting Claim to the active Claim that blocks it.
+ADD_BLOCKED_BY_QUERY = """
+MATCH (blocked:Claim {id: $blocked_id}), (blocker:Claim {id: $blocker_id})
+MERGE (blocked)-[r:BLOCKED_BY]->(blocker)
+RETURN r
+"""
+
+# Removes BLOCKED_BY relationship once a claim is unblocked.
+REMOVE_BLOCKED_BY_QUERY = """
+MATCH (c:Claim {id: $claim_id})-[r:BLOCKED_BY]->()
+DELETE r
+"""
+
+# Updates the status of an existing claim ('active', 'waiting', 'done').
+UPDATE_CLAIM_STATUS_QUERY = """
+MATCH (c:Claim {id: $claim_id})
+SET c.status = $status
+RETURN c
+"""
+
+# Retrieves a single claim by its ID.
+GET_CLAIM_BY_ID_QUERY = """
+MATCH (c:Claim {id: $claim_id})
+OPTIONAL MATCH (c)-[:BLOCKED_BY]->(blocker:Claim)
+RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
+       c.change_type AS change_type, c.status AS status, c.created_at AS created_at,
+       blocker.id AS blocker_id
 """
 
 # Marks a Claim as 'done' when an agent releases its modification lock.
@@ -72,6 +101,15 @@ GET_ACTIVE_CLAIMS_QUERY = """
 MATCH (c:Claim {status: 'active'})
 RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
        c.change_type AS change_type, c.status AS status, c.created_at AS created_at
+"""
+
+# Retrieves all waiting claims and their blocking claim ID.
+GET_WAITING_CLAIMS_QUERY = """
+MATCH (c:Claim {status: 'waiting'})
+OPTIONAL MATCH (c)-[:BLOCKED_BY]->(blocker:Claim)
+RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
+       c.change_type AS change_type, c.status AS status, c.created_at AS created_at,
+       blocker.id AS blocker_id
 """
 
 # Records a collision event between two symbols for historical precedent.
@@ -183,8 +221,8 @@ class GraphDB:
 
     # --- Claims Management ---
 
-    def add_claim(self, agent_id: str, symbol_id: str, change_type: str) -> str:
-        """Create an active claim for an agent and return the claim ID."""
+    def add_claim(self, agent_id: str, symbol_id: str, change_type: str, status: str = "active") -> str:
+        """Create a claim for an agent with specified status ('active' or 'waiting')."""
         claim_id = f"claim_{uuid.uuid4().hex[:6]}"
         now = time.time()
         record = {
@@ -192,8 +230,9 @@ class GraphDB:
             "agent_id": agent_id,
             "symbol_id": symbol_id,
             "change_type": change_type,
-            "status": "active",
-            "created_at": now
+            "status": status,
+            "created_at": now,
+            "blocked_by": None
         }
         self._mem_claims[claim_id] = record
 
@@ -203,9 +242,62 @@ class GraphDB:
                 "agent_id": agent_id,
                 "symbol_id": symbol_id,
                 "change_type": change_type,
+                "status": status,
                 "created_at": now
             })
         return claim_id
+
+    def add_blocked_by(self, blocked_id: str, blocker_id: str):
+        """Create a (blocked:Claim)-[:BLOCKED_BY]->(blocker:Claim) relationship."""
+        if blocked_id in self._mem_claims:
+            self._mem_claims[blocked_id]["blocked_by"] = blocker_id
+        self._mem_edges.append({"type": "BLOCKED_BY", "from": blocked_id, "to": blocker_id})
+
+        if self.is_connected and self.graph:
+            self.graph.query(ADD_BLOCKED_BY_QUERY, {
+                "blocked_id": blocked_id,
+                "blocker_id": blocker_id
+            })
+
+    def remove_blocked_by(self, claim_id: str):
+        """Remove any BLOCKED_BY relationship originating from claim_id."""
+        if claim_id in self._mem_claims:
+            self._mem_claims[claim_id]["blocked_by"] = None
+        self._mem_edges = [e for e in self._mem_edges if not (e["type"] == "BLOCKED_BY" and e["from"] == claim_id)]
+
+        if self.is_connected and self.graph:
+            self.graph.query(REMOVE_BLOCKED_BY_QUERY, {"claim_id": claim_id})
+
+    def update_claim_status(self, claim_id: str, status: str):
+        """Update claim status ('active', 'waiting', 'done')."""
+        if claim_id in self._mem_claims:
+            self._mem_claims[claim_id]["status"] = status
+
+        if self.is_connected and self.graph:
+            self.graph.query(UPDATE_CLAIM_STATUS_QUERY, {
+                "claim_id": claim_id,
+                "status": status
+            })
+
+    def get_claim(self, claim_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a claim by its ID."""
+        if self.is_connected and self.graph:
+            try:
+                res = self.graph.query(GET_CLAIM_BY_ID_QUERY, {"claim_id": claim_id})
+                if res.result_set and len(res.result_set) > 0:
+                    row = res.result_set[0]
+                    return {
+                        "id": row[0],
+                        "agent_id": row[1],
+                        "symbol_id": row[2],
+                        "change_type": row[3],
+                        "status": row[4],
+                        "created_at": row[5],
+                        "blocked_by": row[6]
+                    }
+            except Exception:
+                pass
+        return self._mem_claims.get(claim_id)
 
     def release_claim(self, claim_id: str) -> bool:
         """Mark a claim as 'done'."""
@@ -235,6 +327,27 @@ class GraphDB:
             except Exception:
                 pass
         return [c for c in self._mem_claims.values() if c["status"] == "active"]
+
+    def get_waiting_claims(self) -> List[Dict[str, Any]]:
+        """Return all claims with status == 'waiting'."""
+        if self.is_connected and self.graph:
+            try:
+                res = self.graph.query(GET_WAITING_CLAIMS_QUERY)
+                waiting = []
+                for row in res.result_set:
+                    waiting.append({
+                        "id": row[0],
+                        "agent_id": row[1],
+                        "symbol_id": row[2],
+                        "change_type": row[3],
+                        "status": row[4],
+                        "created_at": row[5],
+                        "blocked_by": row[6]
+                    })
+                return waiting
+            except Exception:
+                pass
+        return [c for c in self._mem_claims.values() if c["status"] == "waiting"]
 
     # --- Path Traversal (Both Directions) ---
 
