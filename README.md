@@ -274,18 +274,19 @@ Press `[ENTER]` to step through each scenario while observing live updates in yo
 
 Conflict Radar speaks standard JSON-RPC over the official Model Context Protocol (MCP). Any MCP-compliant coding assistant can connect directly.
 
-### Claude Code / Claude Desktop Configuration
-Add the server definition to your `claude_desktop_config.json` or project `.mcp.json`:
+### Claude Code / Cursor / Desktop Configuration
+Add the server definition to your project `.mcp.json` or `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "conflict-radar": {
       "command": "python",
-      "args": ["/absolute/path/to/conflict-radar/mcp_server.py"]
+      "args": ["mcp_server.py"]
     }
   }
 }
 ```
+*Note: If your virtual environment is not globally active on PATH, specify your environment's Python interpreter path (e.g. `.venv/Scripts/python.exe` on Windows or `.venv/bin/python` on Linux/macOS).*
 
 ### Agent System Prompt / Rule Injection
 Add the following instruction to your agent's system prompt or `.cursorrules` / `AGENT.md`:
@@ -307,7 +308,7 @@ Before editing any function or class:
 - **`ping() -> str`**
   Connectivity health check returning `"ok"`.
 
-> 💡 **Live Real-Agent Trace:** See [docs/REAL_AGENT_TRANSCRIPT.md](docs/REAL_AGENT_TRANSCRIPT.md) for the verbatim stdio JSON-RPC trace of Claude Code discovering Conflict Radar, receiving a `BLOCK` on an upstream contract dependency, entering `WAITING`, and promoting to `ACTIVE` upon release.
+> 💡 **Scripted Protocol Walkthrough:** See [docs/SCRIPTED_MCP_WALKTHROUGH.md](docs/SCRIPTED_MCP_WALKTHROUGH.md) for a scripted walkthrough demonstrating the complete JSON-RPC request and response payload exchange over stdio (declaring claims, handling `BLOCK`, polling `check()`, and cascade unblocking).
 
 ---
 
@@ -321,7 +322,7 @@ Before editing any function or class:
 
 ## 9. Design Decisions
 
-- **Why a Graph Database over SQL or Key-Value Mutexes?** Traditional file-level mutexes (e.g. Redis locks) are too coarse—they block parallel developers working on independent functions within the same module. Relational databases require slow, recursive CTEs to compute transitive caller hierarchies. FalkorDB computes directional and bidirectional `shortestPath` queries in under 3 milliseconds (p95: 3.16 ms on 120+ symbols), providing fine-grained symbol-level locking.
+- **Why a Graph Database over SQL or Key-Value Mutexes?** Traditional file-level mutexes (e.g. Redis locks) are too coarse—they block parallel developers working on independent functions within the same module. Relational databases require slow, recursive CTEs to compute transitive caller hierarchies. FalkorDB computes directional and bidirectional `shortestPath` queries in about 3 ms p95 (3.16 ms on 120+ symbols), providing fine-grained symbol-level locking.
 - **Bidirectional Contract Protection:** Code changes don't only affect callees downstream; signature edits break upstream callers. Querying both `(A)-[:CALLS*]->(B)` and `(B)-[:CALLS*]->(A)` guarantees mutual contract safety across any transitive depth.
 - **Lazy TTL Expiry:** Background eviction threads risk race conditions when deleting active claims. Instead, Conflict Radar marks stale claims as `expired` lazily during incoming evaluation cycles, keeping locks self-healing and concurrency-safe.
 - **Order-Independent Graph Memory:** By linking a single `:Collision` node to two symbols via dual symmetric `[:INVOLVED]` edges, the graph records collision precedent and queries incident frequency regardless of which agent claims first.
@@ -330,13 +331,7 @@ Before editing any function or class:
 
 ## 10. AI Use Disclosure
 
-Conflict Radar was architected, designed, and implemented by pairing human engineering with AI coding assistants (Claude Code and Google Antigravity). AI assistance was utilized for:
-- Accelerating AST static analysis parser implementation (`indexer.py`).
-- Brainstorming edge-case test matrices (cascading unblocks, multi-hop transitive conflicts, and TTL expiry).
-- Generating front-end Cytoscape.js canvas styling and SSE reactive update wiring.
-- Reviewing Cypher queries for strict FalkorDB syntax compatibility.
-
-All core architecture decisions, data modeling schemas, Cypher graph query designs, and benchmark verifications were authored, validated, and tested directly against real FalkorDB instances.
+<!-- TODO: Mihul writes this -->
 
 ---
 

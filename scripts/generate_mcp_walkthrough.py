@@ -1,10 +1,10 @@
-"""generate_real_agent_transcript.py - Runs real MCP session and generates formatted transcript.
+"""generate_mcp_walkthrough.py - Scripted MCP protocol walkthrough generator.
 
-Demonstrates an autonomous coding agent interacting with Conflict Radar via MCP:
-- Declares intent with `claim`
-- Reacts to `BLOCK` by waiting rather than forcing changes
-- Polls `check` until promoted to `ACTIVE`
-- Completes edits and releases with `release`
+Executes a scripted end-to-end walkthrough of Conflict Radar MCP tools over stdio:
+- Connects to `mcp_server.py` via official MCP Python client
+- Demonstrates JSON-RPC payload structures for `claim`, `check`, and `release`
+- Illustrates waiting behavior upon `BLOCK` and reactive promotion upon release
+- Outputs markdown protocol documentation to docs/SCRIPTED_MCP_WALKTHROUGH.md
 """
 
 import os
@@ -59,7 +59,7 @@ async def main():
         transcript_lines.append(f"### **{actor}**\n\n{content}\n")
 
     log_turn("System", "Conflict Radar MCP Server initialized over stdio protocol.")
-    log_turn("User", "Please refactor `normalize()` in `utils.py` to strip leading and trailing whitespace. Ensure you coordinate with other agents using Conflict Radar MCP before making any changes.")
+    log_turn("User Instruction", "Please refactor `normalize()` in `utils.py` to strip leading and trailing whitespace. Ensure you coordinate with other agents using Conflict Radar MCP before making any changes.")
 
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -67,22 +67,22 @@ async def main():
 
             # Upstream agent already has an active lock on handler.py::parse_request (SIGNATURE)
             upstream_claim = await call_mcp(session, "claim", {
-                "agent_id": "claude-code-upstream",
+                "agent_id": "upstream-agent",
                 "symbol_id": "handler.py::parse_request",
                 "change_type": "SIGNATURE"
             })
             
             # Dev Agent inspects intent and calls claim tool
-            log_turn("Claude-Agent (Thinking)", 
-                "Before modifying `utils.py::normalize`, I will consult Conflict Radar via the `claim` MCP tool to verify whether any concurrent agents are touching dependent symbols."
+            log_turn("Agent Workflow (narration)", 
+                "Before modifying `utils.py::normalize`, the agent consults Conflict Radar via the `claim` MCP tool to verify whether any concurrent agents are touching dependent symbols."
             )
 
             claim_req = {
-                "agent_id": "claude-code-dev",
+                "agent_id": "test-dev-agent",
                 "symbol_id": "utils.py::normalize",
                 "change_type": "BODY"
             }
-            log_turn("Claude-Agent -> MCP Call", 
+            log_turn("Agent Client -> MCP Request", 
                 f"**Tool:** `claim`\n```json\n{json.dumps(claim_req, indent=2)}\n```"
             )
 
@@ -94,13 +94,13 @@ async def main():
             agent_claim_id = claim_resp["claim_id"]
 
             # Dev Agent receives BLOCK verdict
-            log_turn("Claude-Agent (Decision)", 
-                f"Conflict Radar returned a **BLOCK** verdict. An active lock is held upstream on `handler.py::parse_request` (claim ID `{claim_resp.get('conflicting_claim_id')}`). Modifying `utils.py::normalize` now would cause a broken contract. I will enter a WAITING state and poll `check()` until the upstream lock is released."
+            log_turn("Agent State Transition (narration)", 
+                f"Conflict Radar returned a **BLOCK** verdict. An active lock is held upstream on `handler.py::parse_request` (claim ID `{claim_resp.get('conflicting_claim_id')}`). Modifying `utils.py::normalize` now would risk breaking an in-flight caller contract. The agent enters a `WAITING` state and polls `check()` until the upstream lock clears."
             )
 
             # Agent calls check()
             check_resp1 = await call_mcp(session, "check", {"claim_id": agent_claim_id})
-            log_turn("Claude-Agent -> MCP Call", 
+            log_turn("Agent Client -> MCP Request", 
                 f"**Tool:** `check`\n```json\n{json.dumps({'claim_id': agent_claim_id}, indent=2)}\n```"
             )
             log_turn("Conflict Radar -> MCP Response", 
@@ -108,47 +108,48 @@ async def main():
             )
 
             # Upstream agent completes work and releases
-            print("\n[Simulating] Upstream agent finishes refactoring and calls release()...")
+            print("\n[Harness] Upstream agent finishes refactoring and calls release()...")
             release_upstream = await call_mcp(session, "release", {"claim_id": upstream_claim["claim_id"]})
-            log_turn("Background Event (Upstream Agent)", 
-                f"`claude-code-upstream` completed changes and called `release` on `{upstream_claim['claim_id']}`.\nFalkorDB automatically unblocked waiting claims: `{release_upstream.get('unblocked_claims')}`"
+            log_turn("Harness Event (Upstream Release)", 
+                f"`upstream-agent` finishes its code changes and calls `release` on `{upstream_claim['claim_id']}`.\nFalkorDB atomically removes the `BLOCKED_BY` relationship and promotes the waiting claim to `active`:\n```json\n{json.dumps(release_upstream.get('unblocked_claims', []), indent=2)}\n```"
             )
 
             # Dev Agent calls check() again
             check_resp2 = await call_mcp(session, "check", {"claim_id": agent_claim_id})
-            log_turn("Claude-Agent -> MCP Call", 
+            log_turn("Agent Client -> MCP Request", 
                 f"**Tool:** `check`\n```json\n{json.dumps({'claim_id': agent_claim_id}, indent=2)}\n```"
             )
             log_turn("Conflict Radar -> MCP Response", 
                 f"```json\n{json.dumps(check_resp2, indent=2)}\n```"
             )
 
-            log_turn("Claude-Agent (Execution)", 
-                "Status has been promoted to **ACTIVE** (`blocked_by: null`). It is now safe to apply code edits.\n\n```python\n# utils.py\ndef normalize(text: str) -> str:\n    return text.strip().lower()\n```"
+            log_turn("Agent Action (narration)", 
+                "Status has been promoted to **ACTIVE** (`blocked_by: null`). It is now safe to apply code edits without conflicting with peers.\n\n```python\n# utils.py\ndef normalize(text: str) -> str:\n    return text.strip().lower()\n```"
             )
 
             # Dev Agent releases lock
             release_dev = await call_mcp(session, "release", {"claim_id": agent_claim_id})
-            log_turn("Claude-Agent -> MCP Call", 
+            log_turn("Agent Client -> MCP Request", 
                 f"**Tool:** `release`\n```json\n{json.dumps({'claim_id': agent_claim_id}, indent=2)}\n```"
             )
             log_turn("Conflict Radar -> MCP Response", 
                 f"```json\n{json.dumps(release_dev, indent=2)}\n```"
             )
 
-            log_turn("Claude-Agent -> User", 
-                "Successfully refactored `normalize()` in `utils.py`. The modification was coordinated through Conflict Radar: initially waited for an upstream signature change on `handler.py::parse_request` to clear, then acquired an active lock, applied the refactoring safely, and released the lock."
+            log_turn("Agent Response (narration)", 
+                "Refactoring of `normalize()` in `utils.py` complete. Coordinated via Conflict Radar: initially waited for an upstream signature lock on `handler.py::parse_request` to clear, acquired an active lock upon release, applied edits safely, and released the lock."
             )
 
-    # Save to docs/REAL_AGENT_TRANSCRIPT.md
-    out_file = os.path.join(REPO_ROOT, "docs", "REAL_AGENT_TRANSCRIPT.md")
+    # Save to docs/SCRIPTED_MCP_WALKTHROUGH.md
+    out_file = os.path.join(REPO_ROOT, "docs", "SCRIPTED_MCP_WALKTHROUGH.md")
     with open(out_file, "w", encoding="utf-8") as f:
-        f.write("# Real Agent Transcript: Conflict Radar MCP Coordination\n\n")
+        f.write("# Scripted MCP Protocol Walkthrough\n\n")
+        f.write("> ⚠️ **Note:** This is a scripted walkthrough of the MCP protocol. The agent turns are written by the test harness script, not generated by an LLM. It demonstrates the exact JSON-RPC request and response payload exchange between an MCP client and Conflict Radar over stdio.\n\n")
         f.write(f"*Captured at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
         f.write("---\n\n")
         f.write("\n".join(transcript_lines))
     
-    print(f"\n[Saved] Official agent transcript written to: {out_file}")
+    print(f"\n[Saved] Scripted MCP walkthrough written to: {out_file}")
 
 
 if __name__ == "__main__":
