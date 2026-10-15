@@ -149,7 +149,8 @@ RETURN col
 GET_PRECEDENT_QUERY = """
 MATCH (col:Collision)-[:INVOLVED]->(a:Symbol {id: $sym_a})
 MATCH (col)-[:INVOLVED]->(b:Symbol {id: $sym_b})
-WHERE col.timestamp < $before_time
+WHERE ($exclude_id IS NULL OR col.id <> $exclude_id)
+  AND ($before_time IS NULL OR col.timestamp < $before_time)
 RETURN count(col) AS count, max(col.timestamp) AS last_seen
 """
 
@@ -165,9 +166,10 @@ MATCH (caller:Symbol)-[:CALLS]->(callee:Symbol)
 RETURN caller.id AS from_id, callee.id AS to_id
 """
 
-# Retrieves all claims with status, agent, touched symbol, and any blocker.
+# Retrieves active and waiting claims with status, agent, touched symbol, and any blocker.
 GET_ALL_CLAIMS_FOR_DASHBOARD_QUERY = """
 MATCH (c:Claim)
+WHERE c.status IN ['active', 'waiting']
 OPTIONAL MATCH (c)-[:BLOCKED_BY]->(blocker:Claim)
 RETURN c.id AS id, c.agent_id AS agent_id, c.symbol_id AS symbol_id,
        c.change_type AS change_type, c.status AS status,
@@ -578,10 +580,14 @@ class GraphDB:
             "timestamp": ts
         })
 
-    def get_precedent(self, sym_a: str, sym_b: str, before_time: Optional[float] = None) -> Dict[str, Any]:
+    def get_precedent(self, sym_a: str, sym_b: str, before_time: Optional[float] = None, exclude_id: Optional[str] = None) -> Dict[str, Any]:
         """Return count and last collision timestamp for this pair of symbols (order-independent)."""
-        cutoff = before_time if before_time is not None else float("inf")
-        res = self._query(GET_PRECEDENT_QUERY, {"sym_a": sym_a, "sym_b": sym_b, "before_time": cutoff})
+        res = self._query(GET_PRECEDENT_QUERY, {
+            "sym_a": sym_a,
+            "sym_b": sym_b,
+            "before_time": before_time,
+            "exclude_id": exclude_id
+        })
         if res is not None:
             if res.result_set and len(res.result_set) > 0:
                 count = res.result_set[0][0] or 0
@@ -593,7 +599,9 @@ class GraphDB:
         cnt = 0
         last_seen = None
         for col in self._mem_collisions:
-            if col["timestamp"] >= cutoff:
+            if exclude_id is not None and col.get("id") == exclude_id:
+                continue
+            if before_time is not None and col["timestamp"] >= before_time:
                 continue
             pair = {col["sym_a"], col["sym_b"]}
             if (sym_a == sym_b and col["sym_a"] == sym_a and col["sym_b"] == sym_b) or (sym_a != sym_b and sym_a in pair and sym_b in pair):
@@ -651,7 +659,7 @@ class GraphDB:
                 path_parts = c["path_text"].split(" -> ") if c.get("path_text") else []
                 sym_a = c.get("sym_a") or (path_parts[0] if path_parts else "")
                 sym_b = c.get("sym_b") or (path_parts[-1] if path_parts else "")
-                prec = self.get_precedent(sym_a, sym_b, before_time=c.get("timestamp"))
+                prec = self.get_precedent(sym_a, sym_b, before_time=c.get("timestamp"), exclude_id=c.get("id"))
                 c["precedent_count"] = prec.get("count", 0)
 
             return {
@@ -684,14 +692,15 @@ class GraphDB:
                 blocked_by.append({"from": e["from"], "to": e["to"]})
 
         for c in self._mem_claims.values():
-            claims.append(dict(c))
+            if c.get("status") in ["active", "waiting"]:
+                claims.append(dict(c))
 
         recent_mem_cols = self.get_recent_collisions(limit=10)
         for c in recent_mem_cols:
             path_parts = c["path_text"].split(" -> ") if c.get("path_text") else []
             sym_a = c.get("sym_a") or (path_parts[0] if path_parts else "")
             sym_b = c.get("sym_b") or (path_parts[-1] if path_parts else "")
-            prec = self.get_precedent(sym_a, sym_b, before_time=c.get("timestamp"))
+            prec = self.get_precedent(sym_a, sym_b, before_time=c.get("timestamp"), exclude_id=c.get("id"))
             c["precedent_count"] = prec.get("count", 0)
 
         return {

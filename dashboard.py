@@ -91,10 +91,12 @@ async def sse_events(request: Request, limit: Optional[int] = None, seed: bool =
             cycles += 1
 
             try:
-                # 1. Check Claims for additions or status transitions (ACTIVE, WAITING, DONE, EXPIRED)
+                # 1. Check Claims for additions or status transitions (ACTIVE, WAITING)
                 current_graph = db.get_full_graph()
+                active_claim_ids = set()
                 for c in current_graph.get("claims", []):
                     c_id = c["id"]
+                    active_claim_ids.add(c_id)
                     c_status = c["status"]
                     old_status = known_claims.get(c_id)
 
@@ -113,7 +115,7 @@ async def sse_events(request: Request, limit: Optional[int] = None, seed: bool =
                         yield f"data: {json.dumps(event_payload)}\n\n"
 
                     elif old_status != c_status:
-                        # Status mutation (e.g. WAITING -> ACTIVE on unblock, or ACTIVE -> EXPIRED)
+                        # Status mutation (e.g. WAITING -> ACTIVE on unblock)
                         known_claims[c_id] = c_status
                         event_payload = {
                             "type": "claim_status_changed",
@@ -123,6 +125,24 @@ async def sse_events(request: Request, limit: Optional[int] = None, seed: bool =
                             "old_status": old_status,
                             "status": c_status,
                             "blocked_by": c.get("blocked_by")
+                        }
+                        yield f"data: {json.dumps(event_payload)}\n\n"
+
+                # Check for claims that were released or expired
+                for known_id in list(known_claims.keys()):
+                    if known_id not in active_claim_ids and known_claims[known_id] in ("active", "waiting"):
+                        c_rec = db.get_claim(known_id)
+                        new_status = c_rec.get("status", "done") if c_rec else "done"
+                        old_st = known_claims[known_id]
+                        known_claims[known_id] = new_status
+                        event_payload = {
+                            "type": "claim_status_changed",
+                            "claim_id": known_id,
+                            "agent_id": c_rec.get("agent_id", "") if c_rec else "",
+                            "symbol_id": c_rec.get("symbol_id", "") if c_rec else "",
+                            "old_status": old_st,
+                            "status": new_status,
+                            "blocked_by": None
                         }
                         yield f"data: {json.dumps(event_payload)}\n\n"
 
@@ -137,7 +157,7 @@ async def sse_events(request: Request, limit: Optional[int] = None, seed: bool =
 
                         sym_a = col.get("sym_a") or (path_parts[0] if path_parts else "")
                         sym_b = col.get("sym_b") or (path_parts[-1] if path_parts else "")
-                        prec = db.get_precedent(sym_a, sym_b, before_time=col.get("timestamp"))
+                        prec = db.get_precedent(sym_a, sym_b, before_time=col.get("timestamp"), exclude_id=col_id)
                         p_count = prec.get("count", 0)
                         last_seen = prec.get("last_seen")
 

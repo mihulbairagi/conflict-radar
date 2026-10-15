@@ -524,9 +524,11 @@
         cy.elements().remove();
         cy.add(elements);
 
-        // Apply claims styling
+        // Apply claims styling - only active and waiting claims decorate nodes with badges
         (data.claims || []).forEach(c => {
-          applyClaimToNode(c);
+          if (c.status === 'active' || c.status === 'waiting') {
+            applyClaimToNode(c);
+          }
         });
 
         // Re-run hierarchical layout and fit to full canvas

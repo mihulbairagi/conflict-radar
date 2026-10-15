@@ -233,11 +233,13 @@ def test_real_falkordb_sse_stream_precedent_count():
                     collision_events.append(data)
 
     assert len(collision_events) == 3
-    # First collision has precedent 0
+    # First collision has precedent 0 and reason does NOT contain 'seen'
     assert collision_events[0]["precedent_count"] == 0
-    # Second collision has precedent 1
+    assert "seen" not in collision_events[0]["reason"].lower()
+    # Second collision has precedent 1 and says 'seen 1 time before'
     assert collision_events[1]["precedent_count"] == 1
-    # Third collision has precedent 2
+    assert "seen 1 time before" in collision_events[1]["reason"]
+    # Third collision has precedent 2 and says 'seen 2 times before'
     assert collision_events[2]["precedent_count"] == 2
     assert "seen 2 times before" in collision_events[2]["reason"]
 

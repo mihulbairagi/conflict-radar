@@ -160,10 +160,11 @@ RETURN col
 ```cypher
 MATCH (col:Collision)-[:INVOLVED]->(a:Symbol {id: $sym_a})
 MATCH (col)-[:INVOLVED]->(b:Symbol {id: $sym_b})
-WHERE col.timestamp < $before_time
+WHERE ($exclude_id IS NULL OR col.id <> $exclude_id)
+  AND ($before_time IS NULL OR col.timestamp < $before_time)
 RETURN count(col) AS count, max(col.timestamp) AS last_seen
 ```
-* **Plain-Language Explanation:** Looks up how many times these two symbols have collided in the past (strictly prior to `$before_time`). Because it traverses two independent `[:INVOLVED]` edges, the check is completely order-independent: collision between `A` and `B` matches whether queried as `(A, B)` or `(B, A)`.
+* **Plain-Language Explanation:** Looks up how many times these two symbols have collided in the past (strictly prior to `$before_time`, explicitly excluding the current collision ID `$exclude_id` to prevent self-counting). Because it traverses two independent `[:INVOLVED]` edges, the check is completely order-independent: collision between `A` and `B` matches whether queried as `(A, B)` or `(B, A)`.
 
 ### Query 5: Lazy Claim Expiry (TTL Cleanup)
 ```cypher

@@ -4,6 +4,11 @@ verifying that live SSE updates arrive and capturing 1920x1080 screenshots of th
 
 import os
 import sys
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 import json
 import time
 import asyncio
@@ -18,6 +23,7 @@ EDGE_EXE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 
 def capture_screenshot(out_filename: str):
     """Capture a 1920x1080 screenshot of the running dashboard using Edge."""
+    import shutil
     out_path = os.path.join(ARTIFACT_DIR, out_filename)
     url = "http://localhost:8000/?no_sse=1"
     cmd = [
@@ -32,6 +38,11 @@ def capture_screenshot(out_filename: str):
     print(f"[Screenshot] Capturing 1920x1080 view to {out_path}...")
     subprocess.run(cmd, check=True)
     print(f"[Screenshot] Saved: {out_path}")
+    docs_img_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs", "images")
+    if os.path.exists(docs_img_dir):
+        dest_path = os.path.join(docs_img_dir, out_filename)
+        shutil.copy2(out_path, dest_path)
+        print(f"[Screenshot] Synced to repo docs: {dest_path}")
     return out_path
 
 
@@ -47,9 +58,18 @@ async def call_mcp(session: ClientSession, tool: str, args: dict) -> dict:
 
 
 def reset_demo():
+    from falkordb import FalkorDB
+    from indexer import index_codebase
     req = urllib.request.Request("http://localhost:8000/demo/reset", method="POST")
     with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        res = json.loads(resp.read().decode("utf-8"))
+    
+    # Ensure sample_repo is indexed
+    client = FalkorDB(host="localhost", port=6379)
+    graph = client.select_graph("conflict_radar")
+    sample_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sample_repo")
+    index_codebase(sample_dir, graph=graph)
+    return res
 
 
 async def main():
