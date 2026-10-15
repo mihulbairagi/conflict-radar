@@ -80,7 +80,7 @@ def release(claim_id: str) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    if not db._connected:
+    if not db.is_connected:
         print("FATAL: FalkorDB is not connected. Exiting.", file=sys.stderr)
         sys.exit(1)
     print("Conflict Radar MCP Server starting (stdio)...", file=sys.stderr)

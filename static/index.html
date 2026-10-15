@@ -123,19 +123,15 @@
     /* Collision Alert Banner */
     #alert-banner {
       display: none;
-      background: rgba(239, 68, 68, 0.15);
+      background: rgba(239, 68, 68, 0.25);
       border-bottom: 2px solid var(--block);
       padding: 12px 24px;
       color: #fca5a5;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 700;
       text-align: center;
-      animation: slideDown 0.3s ease-out;
-    }
-
-    @keyframes slideDown {
-      from { transform: translateY(-100%); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+      position: relative;
+      z-index: 20;
     }
 
     /* Main Container: Split View */
@@ -161,6 +157,7 @@
     /* Sidebar Area */
     .sidebar {
       width: 420px;
+      height: 100%;
       background: var(--card-bg);
       border-left: 1px solid var(--panel-border);
       display: flex;
@@ -173,6 +170,7 @@
       padding: 16px;
       border-bottom: 1px solid var(--panel-border);
       background: rgba(17, 24, 39, 0.6);
+      flex-shrink: 0;
     }
 
     .legend-title {
@@ -212,6 +210,7 @@
     /* Live Verdict Feed */
     .feed-container {
       flex: 1;
+      min-height: 0;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -226,10 +225,12 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-shrink: 0;
     }
 
     .feed-list {
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
       padding: 12px;
       display: flex;
@@ -242,12 +243,6 @@
       border: 1px solid var(--panel-border);
       border-radius: 8px;
       padding: 12px;
-      animation: fadeIn 0.3s ease-in;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(-4px); }
-      to { opacity: 1; transform: translateY(0); }
     }
 
     .feed-card.verdict-BLOCK {
@@ -386,17 +381,17 @@
               'label': 'data(label)',
               'text-valign': 'center',
               'text-halign': 'center',
-              'font-size': '15px',
-              'font-weight': 'bold',
+              'font-size': '12px',
+              'font-weight': '600',
               'color': '#f3f4f6',
               'background-color': '#1f2937',
               'border-width': 2,
               'border-color': '#4b5563',
               'shape': 'round-rectangle',
-              'width': 'label',
-              'height': 'label',
-              'padding': '14px',
-              'text-max-width': '220px',
+              'width': 200,
+              'height': 64,
+              'padding': '10px',
+              'text-max-width': '190px',
               'text-wrap': 'wrap'
             }
           },
@@ -457,12 +452,11 @@
           }
         ],
         layout: {
-          name: 'dagre',
-          rankDir: 'TB',
-          nodeSep: 60,
-          rankSep: 80,
-          animate: true,
-          animationDuration: 500
+          name: 'breadthfirst',
+          directed: true,
+          padding: 40,
+          spacingFactor: 1.5,
+          animate: false
         }
       });
     }
@@ -507,15 +501,35 @@
           applyClaimToNode(c);
         });
 
-        // Re-run layout
-        cy.layout({
-          name: 'dagre',
-          rankDir: 'TB',
-          nodeSep: 60,
-          rankSep: 80,
-          animate: true,
-          animationDuration: 400
-        }).run();
+        // Re-run hierarchical layout
+        const l = cy.layout({
+          name: 'breadthfirst',
+          directed: true,
+          padding: 40,
+          spacingFactor: 1.5,
+          animate: false
+        });
+        l.run();
+        cy.fit(null, 50);
+
+        // If collisions exist, display top banner and red path immediately
+        if (data.collisions && data.collisions.length > 0) {
+          const col = data.collisions[0];
+          const pathParts = col.path_text ? col.path_text.split(" -> ") : [];
+          if (pathParts.length > 0) {
+            highlightCollision(pathParts);
+            showBanner(`🚨 ${col.verdict}: Agent '${col.agent_a || 'agent-2'}' and Agent '${col.agent_b || 'agent-1'}' collision along path`, col.verdict === 'BLOCK');
+          }
+          data.collisions.slice().reverse().forEach(c => {
+            const parts = c.path_text ? c.path_text.split(" -> ") : [];
+            addFeedCard({
+              verdict: c.verdict,
+              reason: `${c.verdict} collision: Agent '${c.agent_a}' and Agent '${c.agent_b}'`,
+              path: parts,
+              timestamp: c.timestamp
+            });
+          });
+        }
 
       } catch (err) {
         console.error("Failed to load graph:", err);
@@ -596,7 +610,7 @@
 
       const timeStr = new Date().toLocaleTimeString();
       const verdict = event.verdict || (event.status ? event.status.toUpperCase() : 'CLAIM');
-      const badgeClass = `badge-${verdict}` in { 'badge-BLOCK': 1, 'badge-WARN': 1, 'badge-SAFE': 1 } ? `badge-${verdict}` : 'badge-SAFE';
+      const badgeClass = (verdict === 'BLOCK' ? 'badge-BLOCK' : (verdict === 'WARN' ? 'badge-WARN' : 'badge-SAFE'));
 
       let precedentText = '';
       if (event.precedent_count && event.precedent_count > 0) {
@@ -693,7 +707,9 @@
     window.addEventListener('DOMContentLoaded', () => {
       initCytoscape();
       loadGraph();
-      setupSSE();
+      if (!window.location.search.includes('no_sse')) {
+        setupSSE();
+      }
     });
   </script>
 </body>

@@ -463,17 +463,21 @@ class GraphDB:
         res = self._query(GET_WAITING_CLAIMS_QUERY)
         if res is not None:
             waiting = []
+            seen = set()
             for row in res.result_set:
-                waiting.append({
-                    "id": row[0],
-                    "agent_id": row[1],
-                    "symbol_id": row[2],
-                    "change_type": row[3],
-                    "status": row[4],
-                    "created_at": row[5],
-                    "blocked_by": row[6],
-                    "updated_at": row[7] if len(row) > 7 else row[5]
-                })
+                cid = row[0]
+                if cid not in seen:
+                    seen.add(cid)
+                    waiting.append({
+                        "id": cid,
+                        "agent_id": row[1],
+                        "symbol_id": row[2],
+                        "change_type": row[3],
+                        "status": row[4],
+                        "created_at": row[5],
+                        "blocked_by": row[6],
+                        "updated_at": row[7] if len(row) > 7 else row[5]
+                    })
             return waiting
         return [c for c in self._mem_claims.values() if c["status"] == "waiting"]
 
@@ -627,7 +631,8 @@ class GraphDB:
                 "nodes": nodes,
                 "edges": edges,
                 "claims": claims,
-                "blocked_by": blocked_by
+                "blocked_by": blocked_by,
+                "collisions": self.get_recent_collisions(limit=10)
             }
 
         # In-memory fallback
@@ -658,7 +663,8 @@ class GraphDB:
             "nodes": nodes,
             "edges": edges,
             "claims": claims,
-            "blocked_by": blocked_by
+            "blocked_by": blocked_by,
+            "collisions": self.get_recent_collisions(limit=10)
         }
 
     def get_recent_collisions(self, limit: int = 50) -> List[Dict[str, Any]]:
