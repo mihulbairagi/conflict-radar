@@ -19,9 +19,13 @@ except ImportError:
     from mcp.server.fastmcp import FastMCP
     server = FastMCP("conflict-radar")
 
-# Global instances initialized on startup
-db = GraphDB()
-db.connect()
+# Global instances initialized on startup in strict mode
+db = GraphDB(strict=True)
+try:
+    db.connect()
+except ConnectionError as e:
+    print(f"FATAL: Conflict Radar MCP Server requires running FalkorDB: {e}", file=sys.stderr)
+
 radar = ConflictRadar(db=db)
 
 
@@ -76,5 +80,8 @@ def release(claim_id: str) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
+    if not db._connected:
+        print("FATAL: FalkorDB is not connected. Exiting.", file=sys.stderr)
+        sys.exit(1)
     print("Conflict Radar MCP Server starting (stdio)...", file=sys.stderr)
     server.run()

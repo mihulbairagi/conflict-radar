@@ -67,8 +67,8 @@ class ConflictRadar:
         active_claims = list(self.db.get_active_claims())
 
         for w in waiting_claims:
-            # Re-evaluate against current active pool
-            v_str, conf_id, path, hops, reason, _, _ = self._evaluate(
+            # Re-evaluate against current active pool (pure, side-effect free)
+            v_str, conf_id, path, hops, reason, _, _, _, _, _ = self._evaluate(
                 w["agent_id"], w["symbol_id"], w["change_type"], active_claims
             )
 
@@ -104,8 +104,14 @@ class ConflictRadar:
         symbol_id: str,
         c_type: str,
         active_claims: List[Dict[str, Any]]
-    ) -> Tuple[str, Optional[str], List[str], int, str, int, Optional[float]]:
-        """Internal evaluation of a proposed symbol modification against active claims."""
+    ) -> Tuple[str, Optional[str], List[str], int, str, int, Optional[float], Optional[str], Optional[str], str]:
+        """Internal pure evaluation of a proposed symbol modification against active claims.
+        
+        Side-effect free: does NOT record collisions or mutate graph state.
+        Returns:
+            verdict, conflicting_id, path, hops, reason, precedent_count,
+            last_collision_time, other_symbol, other_agent, path_str
+        """
         now = self.clock()
 
         for other in active_claims:
@@ -134,11 +140,8 @@ class ConflictRadar:
                     time_str = datetime.fromtimestamp(p_last).strftime("%Y-%m-%d %H:%M:%S")
                     reason += f" These symbols have collided {p_count} times before; last on {time_str}."
 
-                self.db.record_collision(
-                    symbol_id, other_symbol, v_str, f"{symbol_id} (direct)",
-                    agent_a=agent_id, agent_b=other_agent, now=now
-                )
-                return v_str, other_id, path, 0, reason, p_count, p_last
+                path_str = f"{symbol_id} (direct)"
+                return v_str, other_id, path, 0, reason, p_count, p_last, other_symbol, other_agent, path_str
 
             # Check Condition 2: Multi-Hop Call Path in Either Direction (<= max_hops)
             detected_path = self.db.find_call_path(symbol_id, other_symbol, max_hops=self.max_hops)
@@ -159,13 +162,9 @@ class ConflictRadar:
                     time_str = datetime.fromtimestamp(p_last).strftime("%Y-%m-%d %H:%M:%S")
                     reason += f" These symbols have collided {p_count} times before; last on {time_str}."
 
-                self.db.record_collision(
-                    symbol_id, other_symbol, v_str, path_str,
-                    agent_a=agent_id, agent_b=other_agent, now=now
-                )
-                return v_str, other_id, detected_path, hops, reason, p_count, p_last
+                return v_str, other_id, detected_path, hops, reason, p_count, p_last, other_symbol, other_agent, path_str
 
-        return "SAFE", None, [], 0, f"Safe: No call-chain dependency found between Agent '{agent_id}' and active claims.", 0, None
+        return "SAFE", None, [], 0, f"Safe: No call-chain dependency found between Agent '{agent_id}' and active claims.", 0, None, None, None, ""
 
     def claim(self, agent_id: str, symbol_id: str, change_type: str = "BODY") -> Verdict:
         """Register a claim and evaluate it against other agents' active claims."""
@@ -175,12 +174,19 @@ class ConflictRadar:
         now = self.clock()
         active_claims = self.db.get_active_claims()
 
-        v_str, conflicting_id, path, hops, reason, p_count, p_last = self._evaluate(
+        v_str, conflicting_id, path, hops, reason, p_count, p_last, other_sym, other_ag, path_str = self._evaluate(
             agent_id, symbol_id, c_type, active_claims
         )
 
         status = "waiting" if v_str == "BLOCK" else "active"
         claim_id = self.db.add_claim(agent_id, symbol_id, c_type, status=status, now=now)
+
+        # Record collision EXACTLY ONCE on new claim when verdict is WARN or BLOCK
+        if v_str in ("WARN", "BLOCK") and conflicting_id and other_sym:
+            self.db.record_collision(
+                symbol_id, other_sym, v_str, path_str,
+                agent_a=agent_id, agent_b=other_ag, now=now
+            )
 
         if v_str == "BLOCK" and conflicting_id:
             self.db.add_blocked_by(claim_id, conflicting_id)

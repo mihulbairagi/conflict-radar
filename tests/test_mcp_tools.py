@@ -19,6 +19,9 @@ def mcp_fixture():
     - B calls C
     - D is unrelated
     """
+    from radar_core import ConflictRadar
+    mcp_server.db = GraphDB(strict=False)
+    mcp_server.radar = ConflictRadar(db=mcp_server.db)
     db = mcp_server.db
     db.clear()
 

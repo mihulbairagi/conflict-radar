@@ -9,23 +9,27 @@ Tests FastAPI endpoints:
 
 import pytest
 from fastapi.testclient import TestClient
-from dashboard import app, db
+import dashboard
+from dashboard import app
+from graph_db import GraphDB
 
 
 @pytest.fixture
 def client_fixture():
     """Setup test fixture with seeded code graph and TestClient."""
-    db.clear()
+    dashboard.db = GraphDB(strict=False)
+    dashboard.db.connect()
+    dashboard.db.clear()
 
     # Seed code symbols
-    db.upsert_symbol("pkg/mod.py::func_a", "func_a", "pkg/mod.py", "function")
-    db.upsert_symbol("pkg/mod.py::func_b", "func_b", "pkg/mod.py", "function")
-    db.add_calls("pkg/mod.py::func_a", "pkg/mod.py::func_b")
+    dashboard.db.upsert_symbol("pkg/mod.py::func_a", "func_a", "pkg/mod.py", "function")
+    dashboard.db.upsert_symbol("pkg/mod.py::func_b", "func_b", "pkg/mod.py", "function")
+    dashboard.db.add_calls("pkg/mod.py::func_a", "pkg/mod.py::func_b")
 
     client = TestClient(app)
     yield client
 
-    db.clear()
+    dashboard.db.clear()
 
 
 def test_serve_index_html(client_fixture):
@@ -42,7 +46,7 @@ def test_get_graph_endpoint(client_fixture):
     client = client_fixture
 
     # Add a claim
-    cid = db.add_claim("agent_1", "pkg/mod.py::func_a", "SIGNATURE", status="active")
+    cid = dashboard.db.add_claim("agent_1", "pkg/mod.py::func_a", "SIGNATURE", status="active")
 
     response = client.get("/graph")
     assert response.status_code == 200
@@ -68,10 +72,10 @@ def test_demo_reset_preserves_code_graph(client_fixture):
     client = client_fixture
 
     # Add claims and collisions
-    cid1 = db.add_claim("agent_1", "pkg/mod.py::func_b", "SIGNATURE", status="active")
-    cid2 = db.add_claim("agent_2", "pkg/mod.py::func_a", "BODY", status="waiting")
-    db.add_blocked_by(cid2, cid1)
-    db.record_collision("pkg/mod.py::func_a", "pkg/mod.py::func_b", "BLOCK", "func_a -> func_b")
+    cid1 = dashboard.db.add_claim("agent_1", "pkg/mod.py::func_b", "SIGNATURE", status="active")
+    cid2 = dashboard.db.add_claim("agent_2", "pkg/mod.py::func_a", "BODY", status="waiting")
+    dashboard.db.add_blocked_by(cid2, cid1)
+    dashboard.db.record_collision("pkg/mod.py::func_a", "pkg/mod.py::func_b", "BLOCK", "func_a -> func_b")
 
     # Verify graph has claims
     graph_before = client.get("/graph").json()

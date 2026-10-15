@@ -32,7 +32,7 @@ def fresh_graph():
     """Setup graph fixture with call chain:
     sym_e -> sym_a -> sym_b -> sym_c, and sym_d unrelated.
     """
-    db = GraphDB()
+    db = GraphDB(strict=False)
     db.connect()
     db.clear()
 
@@ -216,3 +216,36 @@ def test_cascade_conflicting_waiters(fresh_graph):
     else:
         assert status_v2["status"] == "waiting"
         assert status_v2["blocked_by"] == v3.claim_id
+
+
+def test_blocked_claim_re_evaluation_produces_single_collision(fresh_graph):
+    """Asserts that a blocked claim re-evaluated multiple times produces exactly 1 Collision record.
+    Ensures _evaluate is pure and collisions are only recorded on initial claim creation.
+    """
+    clock = MockClock(1700000000.0)
+    radar = ConflictRadar(db=fresh_graph, ttl_seconds=300, clock=clock)
+
+    # 1. Agent 1 locks sym_b
+    v1 = radar.claim("agent_1", "sym_b", "SIGNATURE")
+    assert v1.verdict == "SAFE"
+
+    # 2. Agent 2 locks sym_a -> BLOCKED (records exactly 1 collision)
+    v2 = radar.claim("agent_2", "sym_a", "BODY")
+    assert v2.verdict == "BLOCK"
+
+    prec_before = fresh_graph.get_precedent("sym_a", "sym_b")
+    assert prec_before["count"] == 1
+
+    # 3. Simulate 3 re-evaluations via releasing unrelated claims
+    for i in range(3):
+        ux = radar.claim(f"agent_unrelated_{i}", "sym_d", "BODY")
+        radar.release(ux.claim_id)
+
+    # Agent 2's claim is still waiting / blocked by Agent 1
+    assert radar.check(v2.claim_id)["status"] == "waiting"
+
+    # Verify precedent count is STILL exactly 1, not 1 + 3 = 4
+    prec_after = fresh_graph.get_precedent("sym_a", "sym_b")
+    assert prec_after["count"] == 1
+    assert len(fresh_graph._mem_collisions) == 1
+

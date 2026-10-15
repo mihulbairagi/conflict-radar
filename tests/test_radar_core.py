@@ -21,7 +21,7 @@ def radar_fixture():
     - D is unrelated
     - F calls E (making F to C a 4-hop chain)
     """
-    db = GraphDB()
+    db = GraphDB(strict=False)
     db.connect()
     db.clear()
 

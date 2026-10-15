@@ -15,7 +15,7 @@ def graph_fixture():
     - B calls C
     - D is unrelated
     """
-    db = GraphDB()
+    db = GraphDB(strict=False)
     # Connect if daemon is running, otherwise operates on in-memory fallback
     db.connect()
     db.clear()
@@ -115,3 +115,11 @@ def test_precedent_recording(graph_fixture):
     db.record_collision(sym_a, sym_c, "BLOCK", f"{sym_a} -> {sym_c}")
     p2 = db.get_precedent(sym_a, sym_c)
     assert p2["count"] == 2
+
+
+def test_strict_mode_unreachable():
+    """Verify strict mode raises ConnectionError when DB is unreachable."""
+    db = GraphDB(host="127.0.0.1", port=9999, strict=True)
+    with pytest.raises(ConnectionError) as exc_info:
+        db.connect()
+    assert "Failed to connect to FalkorDB" in str(exc_info.value)

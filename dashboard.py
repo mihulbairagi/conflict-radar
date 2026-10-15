@@ -20,9 +20,13 @@ from graph_db import GraphDB
 
 app = FastAPI(title="Conflict Radar Live Dashboard")
 
-# Initialize shared database connection (reads FalkorDB directly)
-db = GraphDB()
-db.connect()
+# Initialize shared database connection in strict mode (reads FalkorDB directly)
+db = GraphDB(strict=True)
+try:
+    db.connect()
+except ConnectionError as e:
+    import sys
+    print(f"FATAL: Conflict Radar Dashboard requires running FalkorDB: {e}", file=sys.stderr)
 
 # Ensure static directory exists
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
