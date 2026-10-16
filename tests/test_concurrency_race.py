@@ -16,7 +16,7 @@ from tests.test_real_falkordb import FALKORDB_AVAILABLE, skip_if_no_falkordb
 def _worker_claim(barrier, agent_id: str, symbol_id: str, change_type: str, out_queue: multiprocessing.Queue):
     """Worker process: connects fresh to real FalkorDB, waits at barrier, and claims."""
     try:
-        db = GraphDB(strict=True)
+        db = GraphDB(graph_name="test_concurrency_race", strict=True)
         db.connect()
         radar = ConflictRadar(db)
 
@@ -36,7 +36,7 @@ def test_multiprocess_concurrent_claim_race_barrier_30_iterations():
     at the exact same microsecond never result in double-SAFE.
     Over 30 iterations, exactly 1 must receive SAFE and 1 must receive BLOCK (100%).
     """
-    db = GraphDB(strict=True)
+    db = GraphDB(graph_name="test_concurrency_race", strict=True)
     db.connect()
 
     # Seed the call chain: handler.py::parse_request -> validator.py::validate_input -> utils.py::normalize

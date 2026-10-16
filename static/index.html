@@ -142,7 +142,7 @@
     /* Top-left: Brand pill */
     .brand-pill {
       position: absolute;
-      top: 24px;
+      top: 20px;
       left: 24px;
       z-index: 10;
       display: flex;
@@ -215,8 +215,8 @@
     /* Top Telemetry Bar */
     .telemetry-bar {
       position: absolute;
-      top: 24px;
-      left: 310px;
+      top: 20px;
+      left: 284px;
       z-index: 10;
       padding: 7px 16px;
       border-radius: var(--radius-pill);
@@ -255,7 +255,7 @@
     /* Top-right action buttons */
     .top-actions {
       position: absolute;
-      top: 24px;
+      top: 20px;
       right: 420px;
       z-index: 10;
       display: flex;
@@ -603,13 +603,13 @@
       font-weight: 600;
     }
 
-    /* Top-center: Floating verdict banner */
+    /* Top-center: Floating verdict banner (Zone 2, below header bar) */
     .verdict-banner-wrap {
       position: absolute;
-      top: 24px;
+      top: 76px;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 10;
+      z-index: 9;
       pointer-events: none;
       display: flex;
       justify-content: center;
@@ -693,6 +693,34 @@
     @media (max-width: 1366px) {
       .panel-card:hover {
         transform: translateY(-4px) scale(1.01);
+      }
+      .brand-pill {
+        padding: 8px 14px;
+        gap: 10px;
+      }
+      .telemetry-bar {
+        left: 254px;
+        gap: 8px;
+        padding: 6px 12px;
+      }
+      .telemetry-label {
+        font-size: 10px;
+      }
+      .telemetry-val {
+        font-size: 11px;
+      }
+      .top-actions {
+        right: 405px;
+      }
+      .btn-top {
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+      .verdict-banner-wrap {
+        top: 76px;
+        left: calc((100% - 400px) / 2);
+        max-width: 540px;
+        width: 88%;
       }
     }
 
