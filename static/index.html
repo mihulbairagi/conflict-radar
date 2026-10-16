@@ -212,13 +212,59 @@
       color: var(--text-muted);
     }
 
-    /* Top-right: Reset button */
-    .btn-reset {
+    /* Top Telemetry Bar */
+    .telemetry-bar {
+      position: absolute;
+      top: 24px;
+      left: 310px;
+      z-index: 10;
+      padding: 7px 16px;
+      border-radius: var(--radius-pill);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .telemetry-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .telemetry-label {
+      color: var(--text-dim);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .telemetry-val {
+      font-weight: 700;
+      color: var(--text-main);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .telemetry-sep {
+      width: 1px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    /* Top-right action buttons */
+    .top-actions {
       position: absolute;
       top: 24px;
       right: 420px;
       z-index: 10;
-      padding: 9px 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-top {
+      padding: 9px 16px;
       border-radius: var(--radius-pill);
       font-size: 13px;
       font-weight: 600;
@@ -231,20 +277,330 @@
       outline: none;
     }
 
-    .btn-reset:hover {
+    .btn-top:hover {
       background: rgba(255, 255, 255, 0.12);
       border-color: rgba(255, 255, 255, 0.28);
       transform: translateY(-2px);
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     }
 
-    .btn-reset:focus-visible {
+    .btn-top:active {
+      transform: translateY(0);
+    }
+
+    .btn-top:focus-visible {
       outline: 2px solid var(--glow-blue);
       outline-offset: 2px;
     }
 
-    .btn-reset:active {
+    .btn-queries {
+      border-color: rgba(138, 92, 255, 0.4);
+      color: #E2E8F0;
+    }
+
+    .btn-queries:hover {
+      border-color: rgba(138, 92, 255, 0.7);
+      background: rgba(138, 92, 255, 0.18);
+    }
+
+    /* Bottom-center: Scripted Demo Player Bar */
+    .scenario-player-wrap {
+      position: absolute;
+      bottom: 74px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .scenario-player {
+      pointer-events: auto;
+      padding: 6px 8px 6px 14px;
+      border-radius: var(--radius-pill);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+    }
+
+    .player-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .player-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--agent-2);
+      box-shadow: 0 0 6px var(--agent-2);
+    }
+
+    .player-buttons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-scenario {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--radius-pill);
+      padding: 6px 14px;
+      color: #F1F5F9;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      white-space: nowrap;
+      outline: none;
+    }
+
+    .btn-scenario:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.14);
+      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .btn-scenario:focus-visible {
+      outline: 2px solid var(--glow-blue);
+      outline-offset: 2px;
+    }
+
+    .btn-scenario:active:not(:disabled) {
       transform: translateY(0);
+    }
+
+    .btn-scenario:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-scenario-reset {
+      color: #94A3B8;
+      background: transparent;
+      border-color: transparent;
+    }
+
+    .btn-scenario-reset:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+      color: #FFFFFF;
+    }
+
+    /* FalkorDB Cypher Inspector Drawer */
+    .query-drawer-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(8px);
+      z-index: 99;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .query-drawer-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .query-drawer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 540px;
+      max-width: 92vw;
+      z-index: 100;
+      background: rgba(13, 20, 38, 0.94);
+      backdrop-filter: blur(28px) saturate(140%);
+      border-left: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: -12px 0 40px rgba(0, 0, 0, 0.6);
+      transform: translateX(100%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .query-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      padding: 18px 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .drawer-title-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .drawer-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .drawer-subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .drawer-close {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #E2E8F0;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .drawer-close:hover {
+      background: rgba(255, 255, 255, 0.2);
+      transform: rotate(90deg);
+    }
+
+    .drawer-body {
+      padding: 20px 24px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      flex: 1;
+    }
+
+    .query-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: var(--radius-inner);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .query-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .query-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #F8FAFC;
+    }
+
+    .query-schema-badges {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .schema-badge {
+      font-size: 10px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(59, 108, 255, 0.16);
+      color: #93C5FD;
+      border: 1px solid rgba(59, 108, 255, 0.3);
+    }
+
+    .schema-badge-rel {
+      background: rgba(245, 180, 84, 0.16);
+      color: #FDE68A;
+      border-color: rgba(245, 180, 84, 0.3);
+    }
+
+    .query-explanation {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+
+    .cypher-block {
+      background: rgba(7, 11, 22, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: #CBD5E1;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .cypher-block .kw { color: #38BDF8; font-weight: 700; }
+    .cypher-block .lbl { color: #4ADE80; font-weight: 600; }
+    .cypher-block .rel { color: #FBBF24; font-weight: 600; }
+    .cypher-block .fn { color: #FB7185; }
+    .cypher-block .param { color: #C084FC; font-weight: 600; }
+
+    .recent-telemetry-box {
+      background: rgba(59, 108, 255, 0.1);
+      border: 1px solid rgba(59, 108, 255, 0.3);
+      border-radius: var(--radius-inner);
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .recent-telemetry-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #93C5FD;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .recent-telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      font-size: 12px;
+    }
+
+    .telem-kv-label {
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+
+    .telem-kv-val {
+      color: #FFFFFF;
+      font-family: var(--font-mono);
+      font-weight: 600;
     }
 
     /* Top-center: Floating verdict banner */
@@ -735,14 +1091,48 @@
       </div>
     </div>
 
-    <!-- Top-right: Reset button -->
-    <button class="btn-reset glass-surface" onclick="resetDemo()" aria-label="Reset demo state">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-        <path d="M3 3v5h5"/>
-      </svg>
-      <span>Reset demo</span>
-    </button>
+    <!-- Top Telemetry Bar -->
+    <div class="telemetry-bar glass-surface" id="telemetry-bar">
+      <div class="telemetry-item">
+        <span class="telemetry-label">Active</span>
+        <span class="telemetry-val" id="telem-active">0</span>
+      </div>
+      <div class="telemetry-sep"></div>
+      <div class="telemetry-item">
+        <span class="telemetry-label">Waiting</span>
+        <span class="telemetry-val" id="telem-waiting">0</span>
+      </div>
+      <div class="telemetry-sep"></div>
+      <div class="telemetry-item">
+        <span class="telemetry-label">Collisions</span>
+        <span class="telemetry-val" id="telem-collisions">0</span>
+      </div>
+      <div class="telemetry-sep"></div>
+      <div class="telemetry-item" id="telem-latency-item">
+        <span class="telemetry-label">Path latency</span>
+        <span class="telemetry-val" id="telem-latency">--</span>
+      </div>
+    </div>
+
+    <!-- Top-right Action Buttons -->
+    <div class="top-actions">
+      <button class="btn-top btn-queries glass-surface" onclick="toggleQueryDrawer()" aria-label="Open FalkorDB Cypher queries">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="12" cy="5" rx="9" ry="3"/>
+          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+        </svg>
+        <span>FalkorDB query</span>
+      </button>
+
+      <button class="btn-top btn-reset glass-surface" onclick="resetDemo()" aria-label="Reset demo state">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+        <span>Reset demo</span>
+      </button>
+    </div>
 
     <!-- Top-center: Floating verdict banner -->
     <div class="verdict-banner-wrap">
@@ -778,6 +1168,23 @@
           <div id="empty-feed-placeholder" style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 24px 8px;">
             Awaiting agent claims...
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom-center: Scripted Demo Player Bar -->
+    <div class="scenario-player-wrap">
+      <div class="scenario-player glass-surface">
+        <div class="player-label">
+          <span class="player-dot"></span>
+          <span>Scripted demo</span>
+        </div>
+        <div class="player-buttons">
+          <button class="btn-scenario" id="btn-scen-1" onclick="runScenarioUI(1)">1: Safe</button>
+          <button class="btn-scenario" id="btn-scen-2" onclick="runScenarioUI(2)">2: Warn</button>
+          <button class="btn-scenario" id="btn-scen-3" onclick="runScenarioUI(3)">3: Block &amp; Unblock</button>
+          <button class="btn-scenario" id="btn-scen-4" onclick="runScenarioUI(4)">4: Precedent</button>
+          <button class="btn-scenario btn-scenario-reset" id="btn-scen-reset" onclick="resetDemo()">Reset</button>
         </div>
       </div>
     </div>
@@ -818,6 +1225,48 @@
         <div class="guide-item">
           <span class="guide-icon guide-icon-thread"></span>
           <span>Glowing thread = call chain between edits</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FalkorDB Query Inspector Drawer -->
+    <div class="query-drawer-backdrop" id="query-drawer-backdrop" onclick="toggleQueryDrawer()"></div>
+    <div class="query-drawer" id="query-drawer" role="dialog" aria-label="FalkorDB Cypher query inspector">
+      <div class="drawer-header">
+        <div class="drawer-title-wrap">
+          <div class="drawer-title">
+            <span>⚡ FalkorDB Cypher inspector</span>
+          </div>
+          <div class="drawer-subtitle">Real graph queries &amp; measured execution telemetry</div>
+        </div>
+        <button class="drawer-close" onclick="toggleQueryDrawer()" aria-label="Close query inspector">✕</button>
+      </div>
+      <div class="drawer-body" id="drawer-body">
+        <div class="recent-telemetry-box" id="drawer-telemetry-box">
+          <div class="recent-telemetry-title">
+            <span>⚡ Real-time path traversal telemetry</span>
+          </div>
+          <div class="recent-telemetry-grid">
+            <div>
+              <div class="telem-kv-label">Last path latency</div>
+              <div class="telem-kv-val" id="drawer-telem-latency">--</div>
+            </div>
+            <div>
+              <div class="telem-kv-label">Collisions in graph</div>
+              <div class="telem-kv-val" id="drawer-telem-collisions">0</div>
+            </div>
+            <div>
+              <div class="telem-kv-label">Evaluated caller</div>
+              <div class="telem-kv-val" id="drawer-telem-caller" style="font-size: 11px;">--</div>
+            </div>
+            <div>
+              <div class="telem-kv-label">Evaluated callee</div>
+              <div class="telem-kv-val" id="drawer-telem-callee" style="font-size: 11px;">--</div>
+            </div>
+          </div>
+        </div>
+        <div id="drawer-query-list" style="display: flex; flex-direction: column; gap: 14px;">
+          <!-- Dynamically populated from GET /queries -->
         </div>
       </div>
     </div>
@@ -1278,6 +1727,14 @@
       const claims = Array.from(activeClaimsMap.values()).filter(c => c.status === 'active' || c.status === 'waiting');
       counterEl.innerText = `${claims.length} active`;
 
+      const activeCount = claims.filter(c => c.status === 'active').length;
+      const waitingCount = claims.filter(c => c.status === 'waiting').length;
+
+      const telemAct = document.getElementById('telem-active');
+      const telemWait = document.getElementById('telem-waiting');
+      if (telemAct) telemAct.innerText = activeCount;
+      if (telemWait) telemWait.innerText = waitingCount;
+
       if (claims.length === 0) {
         listEl.innerHTML = `
           <div id="empty-claims-placeholder" style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 18px 8px;">
@@ -1438,6 +1895,8 @@
             try { runDagreLayout(true); } catch (err) { console.error("runDagreLayout error:", err); }
           }
 
+          try { updateTelemetryFromServer(); } catch (e) {}
+
         } catch (err) {
           console.error("Error processing SSE message:", err);
         }
@@ -1487,9 +1946,131 @@
 
         setCaption("Demo state reset. Codebase call graph preserved.");
         await loadGraph();
+        await updateTelemetryFromServer();
 
       } catch (err) {
         alert("Failed to reset demo: " + err);
+      }
+    }
+
+    // Pure-JS Cypher Syntax Highlighter
+    function highlightCypher(cypher) {
+      if (!cypher) return '';
+      return cypher
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\b(MATCH|WITH|RETURN|CREATE|MERGE|SET|DELETE|WHERE|LIMIT|ORDER BY|AS|AND|OR|NOT|ON CREATE|ON MATCH|OPTIONAL MATCH|UNWIND|IN)\b/g, '<span class="kw">$1</span>')
+        .replace(/(:\b[A-Za-z0-9_]+\b)/g, '<span class="lbl">$1</span>')
+        .replace(/(\[:[A-Za-z0-9_]+(\*[0-9.]+)?\]|-(r:)?\[[A-Za-z0-9_:]+(\*[0-9.]+)?\]->)/g, '<span class="rel">$1</span>')
+        .replace(/\b(shortestPath|nodes|length|count|max|uuid)\b(?=\()/g, '<span class="fn">$1</span>')
+        .replace(/(\$[A-Za-z0-9_]+)/g, '<span class="param">$1</span>');
+    }
+
+    // Fetch and update telemetry and queries from server
+    async function updateTelemetryFromServer() {
+      try {
+        const res = await fetch('/queries');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Update real telemetry values
+        const activeCount = Array.from(activeClaimsMap.values()).filter(c => c.status === 'active').length;
+        const waitingCount = Array.from(activeClaimsMap.values()).filter(c => c.status === 'waiting').length;
+
+        const elAct = document.getElementById('telem-active');
+        const elWait = document.getElementById('telem-waiting');
+        const elCol = document.getElementById('telem-collisions');
+        const elLat = document.getElementById('telem-latency');
+
+        if (elAct) elAct.innerText = activeCount;
+        if (elWait) elWait.innerText = waitingCount;
+        if (elCol) elCol.innerText = data.telemetry?.collisions_recorded !== undefined ? data.telemetry.collisions_recorded : 0;
+
+        const pathLatency = data.recent_execution?.last_path_query?.latency_ms;
+        if (elLat) {
+          elLat.innerText = (pathLatency !== null && pathLatency !== undefined) ? `${pathLatency} ms` : '--';
+        }
+
+        // Update drawer telemetry
+        const drLat = document.getElementById('drawer-telem-latency');
+        const drCol = document.getElementById('drawer-telem-collisions');
+        const drCaller = document.getElementById('drawer-telem-caller');
+        const drCallee = document.getElementById('drawer-telem-callee');
+
+        if (drLat) drLat.innerText = (pathLatency !== null && pathLatency !== undefined) ? `${pathLatency} ms` : '--';
+        if (drCol) drCol.innerText = data.telemetry?.collisions_recorded !== undefined ? data.telemetry.collisions_recorded : 0;
+
+        const lastParams = data.recent_execution?.last_path_query?.params;
+        if (drCaller) drCaller.innerText = lastParams?.start_id ? lastParams.start_id.split('::').pop() : '--';
+        if (drCallee) drCallee.innerText = lastParams?.end_id ? lastParams.end_id.split('::').pop() : '--';
+
+        // Render query templates if not yet rendered
+        const listEl = document.getElementById('drawer-query-list');
+        if (listEl && listEl.children.length === 0 && data.queries) {
+          listEl.innerHTML = data.queries.map(q => {
+            const labelsHtml = (q.labels || []).map(l => `<span class="schema-badge">${l}</span>`).join(' ');
+            const relsHtml = (q.relationships || []).map(r => `<span class="schema-badge schema-badge-rel">[:${r}]</span>`).join(' ');
+            return `
+              <div class="query-card">
+                <div class="query-card-header">
+                  <div class="query-name">${q.name}</div>
+                  <div class="query-schema-badges">${labelsHtml} ${relsHtml}</div>
+                </div>
+                <div class="query-explanation">${q.explanation}</div>
+                <div class="cypher-block">${highlightCypher(q.cypher)}</div>
+              </div>
+            `;
+          }).join('');
+        }
+
+      } catch (err) {
+        console.warn("Telemetry update warning:", err);
+      }
+    }
+
+    // Toggle FalkorDB Query Inspector Drawer
+    function toggleQueryDrawer() {
+      const drawer = document.getElementById('query-drawer');
+      const backdrop = document.getElementById('query-drawer-backdrop');
+      if (!drawer || !backdrop) return;
+
+      const isOpen = drawer.classList.contains('open');
+      if (isOpen) {
+        drawer.classList.remove('open');
+        backdrop.classList.remove('open');
+      } else {
+        drawer.classList.add('open');
+        backdrop.classList.add('open');
+        updateTelemetryFromServer();
+      }
+    }
+
+    // Run scripted scenario 1-4 via POST /demo/scenario/{n}
+    async function runScenarioUI(n) {
+      const buttons = document.querySelectorAll('.btn-scenario');
+      buttons.forEach(b => b.disabled = true);
+
+      try {
+        setCaption(`Running scripted Scenario ${n}...`);
+        const res = await fetch(`/demo/scenario/${n}`, { method: 'POST' });
+        const data = await res.json();
+
+        if (n === 3) {
+          setCaption(`Scenario 3: BLOCK detected! Automatic unblock cascade scheduled in 2.5s...`);
+          setTimeout(async () => {
+            await updateTelemetryFromServer();
+            buttons.forEach(b => b.disabled = false);
+          }, 3200);
+        } else {
+          setTimeout(async () => {
+            await updateTelemetryFromServer();
+            buttons.forEach(b => b.disabled = false);
+          }, 1200);
+        }
+
+      } catch (err) {
+        console.error(`Error running scenario ${n}:`, err);
+        setCaption(`Failed to run scenario ${n}.`);
+        buttons.forEach(b => b.disabled = false);
       }
     }
 
@@ -1533,6 +2114,7 @@
       initCytoscape();
       loadGraph();
       setupParallax();
+      updateTelemetryFromServer();
       if (!window.location.search.includes('no_sse')) {
         setupSSE();
       }
