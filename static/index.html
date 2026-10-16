@@ -123,9 +123,10 @@
 
     #cy {
       position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
+      top: 80px;
+      left: 24px;
+      width: calc(100% - 430px);
+      height: calc(100% - 150px);
       z-index: 3;
     }
 
@@ -951,7 +952,21 @@
           {
             selector: 'node.dimmed',
             style: {
-              'opacity': 0.25
+              'opacity': 0.22
+            }
+          },
+
+          // Node on collision path (Level 2: largest shadow + verdict glow)
+          {
+            selector: 'node.path-node',
+            style: {
+              'opacity': 1.0,
+              'border-color': 'data(verdictColor)',
+              'border-width': 3.5,
+              'shadow-blur': 28,
+              'shadow-color': 'data(verdictColor)',
+              'shadow-opacity': 0.85,
+              'shadow-offset-y': 4
             }
           },
 
@@ -983,12 +998,12 @@
           {
             selector: 'edge.collision-path',
             style: {
+              'opacity': 1.0,
               'width': 4.5,
               'line-color': 'data(threadColor)',
               'target-arrow-color': 'data(threadColor)',
               'target-arrow-shape': 'triangle',
               'arrow-scale': 1.3,
-              'opacity': 1.0,
               'z-index': 999,
               'line-style': 'dashed',
               'line-dash-pattern': [8, 5]
@@ -999,8 +1014,8 @@
           name: 'dagre',
           rankDir: 'TB',
           nodeSep: 65,
-          rankSep: 110,
-          padding: 90,
+          rankSep: 95,
+          padding: 40,
           animate: false
         }
       });
@@ -1009,18 +1024,20 @@
     // Run hierarchical Dagre layout and smoothly center with padding
     function runDagreLayout(animate = true) {
       if (!cy) return;
+      const shouldAnimate = animate && !window.location.search.includes('no_sse');
       const l = cy.layout({
         name: 'dagre',
         rankDir: 'TB',
         nodeSep: 65,
-        rankSep: 110,
-        padding: 90,
-        animate: animate,
+        rankSep: 95,
+        padding: 40,
+        animate: shouldAnimate,
         animationDuration: 300,
         animationEasing: 'cubic-bezier(0.16, 1, 0.3, 1)',
         fit: true
       });
       l.run();
+      cy.fit(undefined, 40);
     }
 
     // Fetch full graph topology from /graph
@@ -1120,21 +1137,21 @@
 
     // Staggered entrance animation on first load
     function animateEntrance() {
+      if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      if (window.location.search.includes('no_sse')) return;
       try {
         const nodes = cy.nodes();
         nodes.forEach((n, idx) => {
           const originalPos = Object.assign({}, n.position());
-          n.position({ x: originalPos.x, y: originalPos.y + 16 });
-          n.style('opacity', 0);
+          n.position({ x: originalPos.x, y: originalPos.y + 12 });
           setTimeout(() => {
             n.animate({
-              position: originalPos,
-              style: { opacity: 1 }
+              position: originalPos
             }, {
-              duration: 500,
+              duration: 400,
               easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
             });
-          }, idx * 45);
+          }, idx * 35);
         });
       } catch (e) {
         console.warn("Entrance animation skipped:", e);
@@ -1155,12 +1172,12 @@
 
       if (claim.status === 'active') {
         node.addClass('status-active');
-        node.data('label', `● ${claim.agent_id} [ACTIVE]\n${baseName}\n${fileName}`);
+        node.data('label', `${baseName}()\n${fileName}\n● ${claim.agent_id} [ACTIVE]`);
       } else if (claim.status === 'waiting') {
         node.addClass('status-waiting');
-        node.data('label', `◌ ${claim.agent_id} [WAITING]\n${baseName}\n${fileName}`);
+        node.data('label', `${baseName}()\n${fileName}\n◌ ${claim.agent_id} [WAITING]`);
       } else {
-        node.data('label', `${baseName}\n${fileName}`);
+        node.data('label', `${baseName}()\n${fileName}`);
       }
     }
 
@@ -1169,7 +1186,6 @@
       const node = cy.getElementById(symbolId);
       if (!node || node.empty()) return;
 
-      const origBorder = node.style('border-color');
       node.animate({
         style: {
           'border-color': '#5EE0A0',
@@ -1219,6 +1235,15 @@
           if (!edge.empty()) {
             edge.removeClass('dimmed').addClass('collision-path');
             edge.data('threadColor', verdictColor);
+            edge.style({
+              'line-color': verdictColor,
+              'target-arrow-color': verdictColor,
+              'underlay-color': verdictColor,
+              'underlay-padding': 4,
+              'underlay-opacity': 0.35,
+              'opacity': 1.0,
+              'width': 4.5
+            });
           }
         }
       }
@@ -1229,6 +1254,7 @@
     // Clear collision highlighting and restore normal opacities
     function clearCollisionHighlight() {
       cy.elements().removeClass('dimmed path-node collision-path');
+      cy.edges().removeStyle('line-color target-arrow-color underlay-color underlay-padding underlay-opacity opacity width');
       stopPulseAnimation();
       const banner = document.getElementById('alert-banner');
       if (banner) banner.style.display = 'none';
