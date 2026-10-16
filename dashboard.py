@@ -19,6 +19,9 @@ from fastapi.staticfiles import StaticFiles
 
 from graph_db import GraphDB
 from radar_core import ConflictRadar
+from indexer import index_codebase
+
+SAMPLE_REPO_DIR = os.path.join(os.path.dirname(__file__), "sample_repo")
 
 app = FastAPI(title="Conflict Radar Live Dashboard")
 
@@ -61,6 +64,8 @@ async def serve_index():
 @app.get("/graph")
 async def get_graph() -> Dict[str, Any]:
     """Return JSON symbols (nodes), CALLS relations (edges), claims, and BLOCKED_BY relationships."""
+    if len(db.get_all_symbol_ids()) == 0 and os.path.exists(SAMPLE_REPO_DIR):
+        index_codebase(SAMPLE_REPO_DIR, graph=db.graph)
     return db.get_full_graph()
 
 
