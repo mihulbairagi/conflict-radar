@@ -107,3 +107,81 @@ def test_events_sse_stream(client_fixture):
             if line.startswith("data:"):
                 assert "init" in line or "Connected" in line
                 break
+
+
+def test_get_queries_endpoint(client_fixture):
+    """Test GET /queries exposes real Cypher queries, explanations, and schema labels."""
+    client = client_fixture
+    response = client.get("/queries")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert "queries" in data
+    assert "recent_execution" in data
+    assert "telemetry" in data
+
+    templates = {q["id"]: q for q in data["queries"]}
+    assert "path_search" in templates
+    assert "claim_create" in templates
+    assert "blocked_by_edge" in templates
+    assert "collision_record" in templates
+    assert "precedent_lookup" in templates
+
+    # Verify real labels and relationships
+    assert ":Symbol" in templates["path_search"]["cypher"]
+    assert "CALLS" in templates["path_search"]["cypher"]
+    assert ":Claim" in templates["claim_create"]["cypher"]
+    assert "BLOCKED_BY" in templates["blocked_by_edge"]["cypher"]
+    assert ":Collision" in templates["collision_record"]["cypher"]
+    assert "INVOLVED" in templates["collision_record"]["cypher"]
+
+    # Verify telemetry structure
+    assert "active_claims_count" in data["telemetry"]
+    assert "waiting_claims_count" in data["telemetry"]
+    assert "collisions_recorded" in data["telemetry"]
+
+
+def test_demo_scenario_endpoints(client_fixture):
+    """Test POST /demo/scenario/{n} runs scenarios 1-4 through real radar and database."""
+    client = client_fixture
+
+    # Seed required symbols and call chain: handler.py::parse_request -> validator.py::validate_input -> utils.py::normalize
+    dashboard.db.upsert_symbol("handler.py::parse_request", "parse_request", "handler.py", "function")
+    dashboard.db.upsert_symbol("validator.py::validate_input", "validate_input", "validator.py", "function")
+    dashboard.db.upsert_symbol("utils.py::normalize", "normalize", "utils.py", "function")
+    dashboard.db.upsert_symbol("billing.py::compute_tax", "compute_tax", "billing.py", "function")
+
+    dashboard.db.add_calls("handler.py::parse_request", "validator.py::validate_input")
+    dashboard.db.add_calls("validator.py::validate_input", "utils.py::normalize")
+
+    # Scenario 1: SAFE
+    resp1 = client.post("/demo/scenario/1")
+    assert resp1.status_code == 200
+    d1 = resp1.json()
+    assert d1["scenario"] == 1
+    assert any(v["verdict"] == "SAFE" for v in d1["verdicts"])
+
+    # Scenario 2: WARN
+    resp2 = client.post("/demo/scenario/2")
+    assert resp2.status_code == 200
+    d2 = resp2.json()
+    assert d2["scenario"] == 2
+    assert any(v["verdict"] == "WARN" for v in d2["verdicts"])
+
+    # Scenario 3: BLOCK & UNBLOCK
+    resp3 = client.post("/demo/scenario/3")
+    assert resp3.status_code == 200
+    d3 = resp3.json()
+    assert d3["scenario"] == 3
+    assert any(v["verdict"] == "BLOCK" for v in d3["verdicts"])
+
+    # Scenario 4: PRECEDENT
+    resp4 = client.post("/demo/scenario/4")
+    assert resp4.status_code == 200
+    d4 = resp4.json()
+    assert d4["scenario"] == 4
+    assert any(v.get("precedent_count", 0) >= 1 for v in d4["verdicts"])
+
+    # Invalid scenario ID returns 400
+    resp_inv = client.post("/demo/scenario/99")
+    assert resp_inv.status_code == 400

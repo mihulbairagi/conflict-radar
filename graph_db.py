@@ -220,6 +220,13 @@ class GraphDB:
         self._mem_claims: Dict[str, Dict[str, Any]] = {}
         self._mem_collisions: List[Dict[str, Any]] = []
 
+        # Real telemetry and execution tracking for inspector
+        self.last_query_latency_ms: Optional[float] = None
+        self.last_path_latency_ms: Optional[float] = None
+        self.last_path_cypher: Optional[str] = None
+        self.last_path_params: Optional[Dict[str, Any]] = None
+        self.last_collision_params: Optional[Dict[str, Any]] = None
+
     def connect(self) -> bool:
         """Connect to FalkorDB on Redis port 6379.
         
@@ -253,6 +260,7 @@ class GraphDB:
         In non-strict mode:
         - Returns query result if connected, otherwise None to allow in-memory fallback.
         """
+        t0 = time.perf_counter()
         if self.strict:
             if not self.is_connected or not self.graph:
                 raise ConnectionError(
@@ -260,13 +268,17 @@ class GraphDB:
                     "Run 'docker compose up -d' or pass strict=False for offline testing."
                 )
             try:
-                return self.graph.query(cypher, params)
+                res = self.graph.query(cypher, params)
+                self.last_query_latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                return res
             except Exception as e:
                 raise RuntimeError(f"FalkorDB query failed: {e}\nCypher: {cypher}\nParams: {params}") from e
         else:
             if self.is_connected and self.graph:
                 try:
-                    return self.graph.query(cypher, params)
+                    res = self.graph.query(cypher, params)
+                    self.last_query_latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                    return res
                 except Exception:
                     return None
             return None
@@ -517,7 +529,13 @@ class GraphDB:
         RETURN [node IN nodes(p) | node.id] AS path_nodes
         LIMIT 1
         """
-        res = self._query(q_shortest, {"start_id": start_id, "end_id": end_id})
+        params = {"start_id": start_id, "end_id": end_id}
+        t0 = time.perf_counter()
+        res = self._query(q_shortest, params)
+        self.last_path_latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        self.last_path_cypher = q_shortest.strip()
+        self.last_path_params = params
+
         if res is not None:
             if res.result_set and len(res.result_set) > 0 and res.result_set[0][0]:
                 return res.result_set[0][0]
@@ -551,12 +569,72 @@ class GraphDB:
             return path_ba
         return None
 
+    @classmethod
+    def get_query_templates(cls) -> List[Dict[str, Any]]:
+        """Return the real Cypher query templates, schema labels, and relationships used by Conflict Radar."""
+        return [
+            {
+                "id": "path_search",
+                "name": "Shortest Directed Call Path",
+                "explanation": "Traverses transitive :CALLS dependencies up to max hops using shortestPath.",
+                "cypher": (
+                    "MATCH (a:Symbol {id: $start_id}), (b:Symbol {id: $end_id})\n"
+                    "WITH shortestPath((a)-[:CALLS*1..$max_hops]->(b)) AS p\n"
+                    "RETURN [node IN nodes(p) | node.id] AS path_nodes\n"
+                    "LIMIT 1"
+                ),
+                "labels": [":Symbol"],
+                "relationships": ["CALLS"]
+            },
+            {
+                "id": "claim_create",
+                "name": "Atomic Claim Registration",
+                "explanation": "Persists an agent claim with status and links it to the target function symbol.",
+                "cypher": ADD_CLAIM_QUERY.strip(),
+                "labels": [":Agent", ":Symbol", ":Claim"],
+                "relationships": ["MADE", "TOUCHES"]
+            },
+            {
+                "id": "blocked_by_edge",
+                "name": "Blocking Dependency Queue",
+                "explanation": "Queues a waiting agent behind an active lock by creating a BLOCKED_BY edge.",
+                "cypher": ADD_BLOCKED_BY_QUERY.strip(),
+                "labels": [":Claim"],
+                "relationships": ["BLOCKED_BY"]
+            },
+            {
+                "id": "collision_record",
+                "name": "Historical Collision Persistence",
+                "explanation": "Records an immutable collision node linked to both involved symbols via :INVOLVED.",
+                "cypher": RECORD_COLLISION_QUERY.strip(),
+                "labels": [":Collision", ":Symbol"],
+                "relationships": ["INVOLVED"]
+            },
+            {
+                "id": "precedent_lookup",
+                "name": "Historical Precedent Query",
+                "explanation": "Traverses prior collisions across both symbols to calculate frequency and precedent count.",
+                "cypher": GET_PRECEDENT_QUERY.strip(),
+                "labels": [":Collision", ":Symbol"],
+                "relationships": ["INVOLVED"]
+            }
+        ]
+
     # --- Precedent & Collision Memory ---
 
     def record_collision(self, sym_a: str, sym_b: str, verdict: str, path_text: str, agent_a: str = "", agent_b: str = "", now: Optional[float] = None):
         """Record a collision event between two symbols for precedent memory."""
         col_id = f"col_{uuid.uuid4().hex[:6]}"
         ts = now if now is not None else time.time()
+        self.last_collision_params = {
+            "sym_a": sym_a,
+            "sym_b": sym_b,
+            "verdict": verdict,
+            "path_text": path_text,
+            "agent_a": agent_a,
+            "agent_b": agent_b,
+            "timestamp": ts
+        }
         if not self.strict:
             self._mem_collisions.append({
                 "id": col_id,

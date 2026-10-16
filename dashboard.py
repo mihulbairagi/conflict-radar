@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from graph_db import GraphDB
+from radar_core import ConflictRadar
 
 app = FastAPI(title="Conflict Radar Live Dashboard")
 
@@ -28,6 +29,15 @@ try:
 except ConnectionError as e:
     import sys
     print(f"FATAL: Conflict Radar Dashboard requires running FalkorDB: {e}", file=sys.stderr)
+
+radar = ConflictRadar(db=db)
+
+def get_radar() -> ConflictRadar:
+    """Return ConflictRadar bound to current db."""
+    global radar
+    if radar is None or radar.db != db:
+        radar = ConflictRadar(db=db)
+    return radar
 
 # Ensure static directory exists
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -58,6 +68,123 @@ async def get_graph() -> Dict[str, Any]:
 async def reset_demo() -> Dict[str, Any]:
     """Wipe transient Claims and Collisions to record repeated demo takes without re-indexing code."""
     return db.reset_demo_state()
+
+
+@app.get("/queries")
+async def get_queries() -> Dict[str, Any]:
+    """Expose real Cypher queries, explanations, and recent execution telemetry from FalkorDB."""
+    active_claims = list(db.get_active_claims())
+    waiting_claims = list(db.get_waiting_claims())
+    recent_collisions = list(db.get_recent_collisions(limit=1000))
+
+    return {
+        "queries": GraphDB.get_query_templates(),
+        "recent_execution": {
+            "last_path_query": {
+                "cypher": db.last_path_cypher,
+                "params": db.last_path_params,
+                "latency_ms": db.last_path_latency_ms
+            },
+            "last_collision_params": db.last_collision_params,
+            "last_query_latency_ms": db.last_query_latency_ms
+        },
+        "telemetry": {
+            "active_claims_count": len(active_claims),
+            "waiting_claims_count": len(waiting_claims),
+            "collisions_recorded": len(recent_collisions),
+            "last_path_latency_ms": db.last_path_latency_ms
+        }
+    }
+
+
+@app.post("/demo/scenario/{scenario_id}")
+async def run_scenario(scenario_id: int) -> Dict[str, Any]:
+    """Execute real scripted scenario through FalkorDB and ConflictRadar."""
+    if scenario_id < 1 or scenario_id > 4:
+        return JSONResponse(status_code=400, content={"error": f"Invalid scenario ID {scenario_id}. Must be 1-4."})
+
+    r = get_radar()
+
+    if scenario_id == 1:
+        # Scenario 1: SAFE (Unrelated domains)
+        db.reset_demo_state()
+        v1 = r.claim("agent-1", "billing.py::compute_tax", "BODY")
+        v2 = r.claim("agent-2", "handler.py::parse_request", "BODY")
+        return {
+            "scenario": 1,
+            "title": "Scenario 1: SAFE - Independent Edits Across Separate Domains",
+            "verdicts": [
+                {"agent": "agent-1", "symbol": "billing.py::compute_tax", "verdict": v1.verdict, "reason": v1.reason},
+                {"agent": "agent-2", "symbol": "handler.py::parse_request", "verdict": v2.verdict, "reason": v2.reason}
+            ]
+        }
+
+    elif scenario_id == 2:
+        # Scenario 2: WARN (Multi-hop body changes)
+        db.reset_demo_state()
+        v1 = r.claim("agent-1", "utils.py::normalize", "BODY")
+        v2 = r.claim("agent-2", "handler.py::parse_request", "BODY")
+        return {
+            "scenario": 2,
+            "title": "Scenario 2: WARN - Multi-Hop Dependency with Body-Only Changes",
+            "verdicts": [
+                {"agent": "agent-1", "symbol": "utils.py::normalize", "verdict": v1.verdict, "reason": v1.reason},
+                {"agent": "agent-2", "symbol": "handler.py::parse_request", "verdict": v2.verdict, "reason": v2.reason, "hops": v2.hops, "path": v2.path}
+            ]
+        }
+
+    elif scenario_id == 3:
+        # Scenario 3: BLOCK & UNBLOCK (Signature conflict)
+        db.reset_demo_state()
+        v1 = r.claim("agent-1", "utils.py::normalize", "BODY")
+        v2 = r.claim("agent-2", "handler.py::parse_request", "SIGNATURE")
+
+        # Asynchronously release agent-1 after 2.5 seconds so waiting agent-2 is unblocked live
+        async def delayed_release(claim_id: str):
+            await asyncio.sleep(2.5)
+            r.release(claim_id)
+
+        if v1.claim_id:
+            asyncio.create_task(delayed_release(v1.claim_id))
+
+        return {
+            "scenario": 3,
+            "title": "Scenario 3: BLOCK & Reactive Unblock - Signature Conflict",
+            "verdicts": [
+                {"agent": "agent-1", "symbol": "utils.py::normalize", "verdict": v1.verdict},
+                {"agent": "agent-2", "symbol": "handler.py::parse_request", "verdict": v2.verdict, "hops": v2.hops, "path": v2.path}
+            ],
+            "unblock_scheduled_in_seconds": 2.5
+        }
+
+    elif scenario_id == 4:
+        # Scenario 4: PRECEDENT (Graph memory of prior collisions)
+        # Release existing claims without deleting historical collision nodes
+        for c in list(db.get_active_claims()) + list(db.get_waiting_claims()):
+            db.update_claim_status(c["id"], "done")
+
+        # Guarantee at least 1 prior collision exists for this pair so precedent is demonstrated
+        prec_check = db.get_precedent("utils.py::normalize", "handler.py::parse_request")
+        if prec_check["count"] == 0:
+            db.record_collision(
+                "utils.py::normalize",
+                "handler.py::parse_request",
+                "BLOCK",
+                "handler.py::parse_request -> validator.py::validate_input -> utils.py::normalize",
+                agent_a="agent-2",
+                agent_b="agent-1"
+            )
+
+        v1 = r.claim("agent-1", "utils.py::normalize", "BODY")
+        v2 = r.claim("agent-2", "handler.py::parse_request", "SIGNATURE")
+        return {
+            "scenario": 4,
+            "title": "Scenario 4: PRECEDENT - Graph Memory of Prior Collisions",
+            "verdicts": [
+                {"agent": "agent-1", "symbol": "utils.py::normalize", "verdict": v1.verdict},
+                {"agent": "agent-2", "symbol": "handler.py::parse_request", "verdict": v2.verdict, "hops": v2.hops, "path": v2.path, "precedent_count": v2.precedent_count}
+            ]
+        }
 
 
 @app.get("/events")
