@@ -4,385 +4,819 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Conflict Radar - Live Multi-Agent Coordination Dashboard</title>
-  <!-- Cytoscape.js for robust graph visualization -->
+  <!-- CONFLICT RADAR: Live Multi-Agent Coordination Dashboard -->
+  <!-- Cytoscape.js and Dagre layout for hierarchical dependency visualization -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
-  <!-- Dagre layout for clear hierarchical dependency visualization -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
   <style>
     :root {
-      --bg: #090d16;
-      --card-bg: #111827;
-      --panel-border: #1f2937;
-      --text-main: #f9fafb;
-      --text-muted: #9ca3af;
-      --safe: #10b981;
-      --warn: #f59e0b;
-      --block: #ef4444;
-      --accent: #3b82f6;
+      /* Background gradient tokens */
+      --bg-start: #0A1020;
+      --bg-end: #131C33;
+      --glow-blue: #3B6CFF;
+      --glow-violet: #8A5CFF;
+
+      /* Glass panel tokens */
+      --glass-bg: rgba(255, 255, 255, 0.06);
+      --glass-blur: blur(24px) saturate(140%);
+      --glass-border: 1px solid rgba(255, 255, 255, 0.14);
+      --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      --radius-panel: 18px;
+      --radius-item: 12px;
+      --radius-pill: 9999px;
+
+      /* Verdict colors (used only for verdicts) */
+      --verdict-safe: #5EE0A0;
+      --verdict-warn: #F5B454;
+      --verdict-block: #FF5C6C;
+
+      /* Agent identity colors (used only for agent chips and rings) */
+      --agent-1: #7AB8FF;
+      --agent-2: #C79BFF;
+      --agent-other: #FFB07A;
+
+      /* Typography & UI */
+      --font-ui: -apple-system, "SF Pro Display", Inter, system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+      --text-main: #F3F4F6;
+      --text-muted: #8E9BB5;
+      --text-dim: #64748B;
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
-    body {
-      background-color: var(--bg);
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
       color: var(--text-main);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Screen container */
+    .app-viewport {
+      position: relative;
+      width: 100vw;
       height: 100vh;
-      display: flex;
-      flex-direction: column;
       overflow: hidden;
     }
 
-    /* Top Navigation Bar */
-    header {
-      background: var(--card-bg);
-      border-bottom: 1px solid var(--panel-border);
-      padding: 12px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      z-index: 10;
-      flex-shrink: 0;
-      height: 60px;
+    /* Full-bleed canvas container behind everything */
+    #cy-container {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      overflow: hidden;
     }
 
-    .brand {
+    /* Background blurred radial glows */
+    .bg-glow {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 1;
+      will-change: transform;
+      transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .bg-glow-1 {
+      top: -120px;
+      left: -100px;
+      width: 680px;
+      height: 680px;
+      background: radial-gradient(circle, var(--glow-blue) 0%, rgba(59, 108, 255, 0) 70%);
+      opacity: 0.18;
+      filter: blur(120px);
+    }
+
+    .bg-glow-2 {
+      bottom: -150px;
+      right: -100px;
+      width: 720px;
+      height: 720px;
+      background: radial-gradient(circle, var(--glow-violet) 0%, rgba(138, 92, 255, 0) 70%);
+      opacity: 0.14;
+      filter: blur(140px);
+    }
+
+    /* Subtle dot grid */
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #cy {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 3;
+    }
+
+    /* Glass utility class */
+    .glass-surface {
+      background: var(--glass-bg);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border: var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+
+    /* Top-left: Brand pill */
+    .brand-pill {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      z-index: 10;
       display: flex;
       align-items: center;
       gap: 12px;
+      padding: 10px 18px;
+      border-radius: var(--radius-pill);
+      user-select: none;
     }
 
     .radar-icon {
-      font-size: 24px;
-      animation: pulse 2s infinite ease-in-out;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-block;
+      animation: pulse-soft 2.5s infinite ease-in-out;
     }
 
-    @keyframes pulse {
+    @keyframes pulse-soft {
       0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.15); opacity: 0.8; }
+      50% { transform: scale(1.12); opacity: 0.85; }
     }
 
-    .title {
-      font-size: 18px;
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-size: 15px;
       font-weight: 700;
-      letter-spacing: 0.5px;
-      color: #fff;
+      letter-spacing: -0.01em;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .subtitle {
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      background: rgba(94, 224, 160, 0.15);
+      border: 1px solid rgba(94, 224, 160, 0.35);
+      color: var(--verdict-safe);
+    }
+
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--verdict-safe);
+      box-shadow: 0 0 8px var(--verdict-safe);
+      animation: blink 2s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .brand-subtitle {
       font-size: 12px;
       color: var(--text-muted);
     }
 
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .status-badge {
-      font-size: 12px;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--safe);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      background: var(--safe);
-      border-radius: 50%;
-    }
-
+    /* Top-right: Reset button */
     .btn-reset {
-      background: #1f2937;
-      color: #f3f4f6;
-      border: 1px solid #374151;
-      padding: 8px 16px;
-      border-radius: 6px;
+      position: absolute;
+      top: 24px;
+      right: 420px;
+      z-index: 10;
+      padding: 9px 18px;
+      border-radius: var(--radius-pill);
       font-size: 13px;
       font-weight: 600;
+      color: var(--text-main);
       cursor: pointer;
-      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      outline: none;
     }
 
     .btn-reset:hover {
-      background: #374151;
-      color: #fff;
-      border-color: #4b5563;
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.28);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     }
 
-    /* Collision Alert Banner: never truncate, wrap cleanly, prominent 18px text */
+    .btn-reset:focus-visible {
+      outline: 2px solid var(--glow-blue);
+      outline-offset: 2px;
+    }
+
+    .btn-reset:active {
+      transform: translateY(0);
+    }
+
+    /* Top-center: Floating verdict banner */
+    .verdict-banner-wrap {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+      max-width: 780px;
+      width: 90%;
+    }
+
     #alert-banner {
+      pointer-events: auto;
       display: none;
-      background: rgba(239, 68, 68, 0.25);
-      border-bottom: 2px solid var(--block);
-      padding: 14px 24px;
-      color: #fca5a5;
-      font-size: 18px;
-      font-weight: 700;
-      text-align: center;
-      position: relative;
-      z-index: 20;
-      flex-shrink: 0;
+      padding: 12px 24px;
+      border-radius: var(--radius-pill);
+      font-size: 14px;
+      font-weight: 500;
       line-height: 1.4;
+      text-align: center;
+      animation: slide-down 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
       white-space: normal;
       word-break: break-word;
     }
 
-    /* Main Container: Flexbox handles remaining height naturally */
-    .main-container {
-      display: flex;
-      flex: 1;
-      min-height: 0;
-      position: relative;
-      overflow: hidden;
+    @keyframes slide-down {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
 
-    /* Graph Canvas Area */
-    #cy-container {
-      flex: 1;
-      position: relative;
-      background: radial-gradient(circle at center, #111827 0%, #090d16 100%);
-      min-width: 0;
+    .banner-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: var(--radius-pill);
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+      margin-right: 8px;
     }
 
-    #cy {
-      width: 100%;
-      height: 100%;
+    .banner-path {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      opacity: 0.95;
     }
 
-    /* Sidebar Area */
-    .sidebar {
-      width: 440px;
-      height: 100%;
-      background: var(--card-bg);
-      border-left: 1px solid var(--panel-border);
+    /* Right side: stacked floating glass panels */
+    .right-panels {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      bottom: 24px;
+      width: 376px;
+      z-index: 10;
       display: flex;
       flex-direction: column;
-      z-index: 5;
-      flex-shrink: 0;
+      gap: 16px;
+      pointer-events: none;
+    }
+
+    .panel-card {
+      pointer-events: auto;
+      border-radius: var(--radius-panel);
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    /* Legend Box */
-    .legend-box {
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--panel-border);
-      background: rgba(17, 24, 39, 0.7);
+    /* 3D subtle perspective tilt on desktop */
+    @media (min-width: 1367px) {
+      .right-panels {
+        perspective: 1200px;
+      }
+      .panel-card {
+        transform: rotateY(-3deg);
+        transform-origin: right center;
+      }
+      .panel-card:hover {
+        transform: rotateY(0deg) translateY(-4px) scale(1.01);
+        box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      }
+    }
+
+    @media (max-width: 1366px) {
+      .panel-card:hover {
+        transform: translateY(-4px) scale(1.01);
+      }
+    }
+
+    .panel-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       flex-shrink: 0;
     }
 
-    .legend-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-    }
-
-    .legend-items {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
+    .panel-title {
       font-size: 13px;
-    }
-
-    .legend-item {
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #FFFFFF;
       display: flex;
       align-items: center;
       gap: 8px;
-      color: #d1d5db;
     }
 
-    .legend-swatch {
-      width: 14px;
-      height: 14px;
-      border-radius: 4px;
+    .panel-count {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
     }
 
-    .swatch-active { background: var(--safe); }
-    .swatch-waiting { background: var(--warn); }
-    .swatch-block { background: var(--block); }
-    .swatch-neutral { background: #4b5563; }
+    /* Panel 1: Active claims list */
+    #active-claims-panel {
+      flex: 0 0 auto;
+      max-height: 260px;
+    }
 
-    /* Live Verdict Feed Container */
-    .feed-container {
-      flex: 1;
-      min-height: 0;
+    .claims-list {
+      padding: 12px;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      gap: 8px;
+      max-height: 200px;
     }
 
-    .feed-header {
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--panel-border);
-      font-size: 14px;
-      font-weight: 700;
-      color: #e5e7eb;
+    .claim-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-item);
+      padding: 10px 12px;
       display: flex;
-      justify-content: space-between;
+      flex-direction: column;
+      gap: 6px;
+      transition: background 0.15s;
+    }
+
+    .claim-item:hover {
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    .claim-item-top {
+      display: flex;
       align-items: center;
-      flex-shrink: 0;
-      background: rgba(17, 24, 39, 0.4);
+      justify-content: space-between;
+    }
+
+    .agent-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .agent-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+
+    .agent-chip-agent-1 .agent-dot { background: var(--agent-1); }
+    .agent-chip-agent-1 { color: var(--agent-1); border: 1px solid rgba(122, 184, 255, 0.3); }
+
+    .agent-chip-agent-2 .agent-dot { background: var(--agent-2); }
+    .agent-chip-agent-2 { color: var(--agent-2); border: 1px solid rgba(199, 155, 255, 0.3); }
+
+    .agent-chip-other .agent-dot { background: var(--agent-other); }
+    .agent-chip-other { color: var(--agent-other); border: 1px solid rgba(255, 176, 122, 0.3); }
+
+    .status-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
+    }
+
+    .status-badge-active {
+      background: rgba(94, 224, 160, 0.18);
+      color: var(--verdict-safe);
+      border: 1px solid rgba(94, 224, 160, 0.35);
+    }
+
+    .status-badge-waiting {
+      background: rgba(245, 180, 84, 0.18);
+      color: var(--verdict-warn);
+      border: 1px solid rgba(245, 180, 84, 0.35);
+    }
+
+    .claim-symbol {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #E2E8F0;
+      word-break: break-all;
+    }
+
+    .claim-blocked-msg {
+      font-size: 11px;
+      color: var(--verdict-block);
+      font-weight: 600;
+    }
+
+    /* Panel 2: Verdict feed */
+    #verdict-feed-panel {
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .feed-list {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
-      padding: 14px;
+      padding: 12px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
-    /* High contrast cards */
     .feed-card {
-      background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 8px;
-      padding: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-item);
+      padding: 12px;
       display: flex;
       flex-direction: column;
       gap: 8px;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+      transition: all 0.2s;
     }
 
-    .feed-card.verdict-BLOCK {
-      border-left: 5px solid var(--block);
-      background: rgba(239, 68, 68, 0.12);
+    .feed-card:hover {
+      background: rgba(255, 255, 255, 0.07);
     }
 
-    .feed-card.verdict-WARN {
-      border-left: 5px solid var(--warn);
-      background: rgba(245, 158, 11, 0.12);
-    }
-
-    .feed-card.verdict-SAFE {
-      border-left: 5px solid var(--safe);
-      background: rgba(16, 185, 129, 0.12);
-    }
-
-    .card-top {
+    .feed-card-header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
     }
 
-    .badge {
-      font-size: 12px;
-      font-weight: 800;
-      padding: 3px 8px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
+    .verdict-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: var(--radius-pill);
     }
 
-    .badge-BLOCK { background: var(--block); color: #fff; }
-    .badge-WARN { background: var(--warn); color: #000; }
-    .badge-SAFE { background: var(--safe); color: #000; }
+    .verdict-badge-safe {
+      background: rgba(94, 224, 160, 0.18);
+      color: var(--verdict-safe);
+      border: 1px solid rgba(94, 224, 160, 0.35);
+    }
+
+    .verdict-badge-warn {
+      background: rgba(245, 180, 84, 0.18);
+      color: var(--verdict-warn);
+      border: 1px solid rgba(245, 180, 84, 0.35);
+    }
+
+    .verdict-badge-block {
+      background: rgba(255, 92, 108, 0.18);
+      color: var(--verdict-block);
+      border: 1px solid rgba(255, 92, 108, 0.35);
+    }
 
     .card-time {
-      font-size: 12px;
-      color: var(--text-muted);
+      font-size: 11px;
+      color: var(--text-dim);
     }
 
-    .card-reason {
-      font-size: 14px;
+    .card-meaning {
+      font-size: 12px;
       font-weight: 500;
-      color: #f3f4f6;
-      line-height: 1.4;
+      color: #E2E8F0;
+      line-height: 1.35;
     }
 
     .card-path {
-      font-size: 13px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      color: #93c5fd;
-      background: rgba(59, 130, 246, 0.15);
-      border: 1px solid rgba(59, 130, 246, 0.25);
-      padding: 6px 10px;
-      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: rgba(10, 16, 32, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: #93C5FD;
       word-break: break-all;
     }
 
     .card-precedent {
-      font-size: 12px;
-      color: #fbbf24;
-      font-weight: 700;
-      display: flex;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--verdict-warn);
+      display: inline-flex;
       align-items: center;
       gap: 4px;
-      background: rgba(251, 191, 36, 0.1);
-      padding: 4px 8px;
+    }
+
+    /* Bottom-center: Caption pill */
+    .caption-pill-wrap {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .caption-pill {
+      pointer-events: auto;
+      padding: 10px 22px;
+      border-radius: var(--radius-pill);
+      font-size: 13px;
+      font-weight: 500;
+      color: #E2E8F0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      max-width: 680px;
+      text-align: center;
+    }
+
+    .caption-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--glow-blue);
+      box-shadow: 0 0 8px var(--glow-blue);
+      flex-shrink: 0;
+    }
+
+    /* Bottom-left: "How to read this" collapsible guide card */
+    .guide-card {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      z-index: 10;
+      width: 320px;
+      border-radius: var(--radius-panel);
+      padding: 14px 18px;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .guide-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .guide-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .guide-toggle {
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+
+    .guide-content {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      transition: max-height 0.25s ease, opacity 0.25s ease;
+    }
+
+    .guide-card.collapsed .guide-content {
+      display: none;
+    }
+
+    .guide-card.collapsed .guide-toggle {
+      transform: rotate(-90deg);
+    }
+
+    .guide-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .guide-icon {
+      width: 14px;
+      height: 14px;
       border-radius: 4px;
-      width: fit-content;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .guide-icon-node {
+      background: rgba(19, 28, 51, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .guide-icon-arrow {
+      background: #4A5B7D;
+      height: 2px;
+      border-radius: 1px;
+    }
+
+    .guide-icon-green {
+      border: 2px solid var(--verdict-safe);
+      border-radius: 50%;
+    }
+
+    .guide-icon-amber {
+      border: 2px dashed var(--verdict-warn);
+      border-radius: 50%;
+    }
+
+    .guide-icon-thread {
+      background: var(--verdict-block);
+      box-shadow: 0 0 6px var(--verdict-block);
+      height: 3px;
+    }
+
+    /* Accessibility: focus states & reduced motion */
+    button:focus-visible, .guide-header:focus-visible {
+      outline: 2px solid var(--glow-blue);
+      outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+      .panel-card {
+        transform: none !important;
+      }
+      .bg-glow {
+        transform: none !important;
+      }
     }
   </style>
 </head>
 <body>
 
-  <!-- Top Navigation Bar -->
-  <header>
-    <div class="brand">
-      <div class="radar-icon">📡</div>
-      <div>
-        <div class="title">CONFLICT RADAR</div>
-        <div class="subtitle">Autonomous AI Traffic Controller &amp; FalkorDB Call Graph</div>
-      </div>
-    </div>
-    <div class="header-actions">
-      <div class="status-badge" id="sse-status">
-        <div class="status-dot"></div>
-        <span>Live Events Active</span>
-      </div>
-      <button class="btn-reset" onclick="resetDemo()">Reset Demo</button>
-    </div>
-  </header>
-
-  <!-- Banner for BLOCK or WARN incidents -->
-  <div id="alert-banner"></div>
-
-  <!-- Main Workspace -->
-  <div class="main-container">
-    <!-- Cytoscape Graph Canvas -->
+  <div class="app-viewport">
+    <!-- Full-bleed graph canvas behind everything -->
     <div id="cy-container">
+      <div id="bg-glow-1" class="bg-glow bg-glow-1"></div>
+      <div id="bg-glow-2" class="bg-glow bg-glow-2"></div>
+      <div class="bg-grid"></div>
       <div id="cy"></div>
     </div>
 
-    <!-- Sidebar: Legend & Live Event Feed -->
-    <div class="sidebar">
-      <div class="legend-box">
-        <div class="legend-title">Graph Legend</div>
-        <div class="legend-items">
-          <div class="legend-item"><div class="legend-swatch swatch-active"></div> <span>ACTIVE Claim</span></div>
-          <div class="legend-item"><div class="legend-swatch swatch-waiting"></div> <span>WAITING Claim</span></div>
-          <div class="legend-item"><div class="legend-swatch swatch-block"></div> <span>Collision Path</span></div>
-          <div class="legend-item"><div class="legend-swatch swatch-neutral"></div> <span>Code Symbol</span></div>
+    <!-- Top-left: Brand pill -->
+    <div class="brand-pill glass-surface">
+      <span class="radar-icon">📡</span>
+      <div class="brand-text">
+        <div class="brand-title">
+          <span>Conflict Radar</span>
+          <span class="live-badge" id="sse-status">
+            <span class="live-dot"></span>
+            <span id="sse-status-text">Live</span>
+          </span>
+        </div>
+        <div class="brand-subtitle">Autonomous multi-agent traffic controller</div>
+      </div>
+    </div>
+
+    <!-- Top-right: Reset button -->
+    <button class="btn-reset glass-surface" onclick="resetDemo()" aria-label="Reset demo state">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+      <span>Reset demo</span>
+    </button>
+
+    <!-- Top-center: Floating verdict banner -->
+    <div class="verdict-banner-wrap">
+      <div id="alert-banner" class="glass-surface" role="alert"></div>
+    </div>
+
+    <!-- Right side: Stacked floating glass panels -->
+    <div class="right-panels">
+      <!-- Panel 1: Active claims -->
+      <div class="panel-card glass-surface" id="active-claims-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Active claims</span>
+          </div>
+          <span class="panel-count" id="claims-counter">0 active</span>
+        </div>
+        <div class="claims-list" id="claims-list">
+          <div id="empty-claims-placeholder" style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 18px 8px;">
+            No claims held
+          </div>
         </div>
       </div>
 
-      <div class="feed-container">
-        <div class="feed-header">
-          <span>Live Verdict &amp; Collision Stream</span>
-          <span id="feed-counter" style="color: var(--text-muted); font-weight: normal; font-size: 12px;">0 events</span>
+      <!-- Panel 2: Verdict feed -->
+      <div class="panel-card glass-surface" id="verdict-feed-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>Verdict feed</span>
+          </div>
+          <span class="panel-count" id="feed-counter">0 events</span>
         </div>
         <div class="feed-list" id="feed-list">
-          <div id="empty-feed-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+          <div id="empty-feed-placeholder" style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 24px 8px;">
             Awaiting agent claims...
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom-center: Caption pill -->
+    <div class="caption-pill-wrap">
+      <div class="caption-pill glass-surface" id="caption-pill">
+        <div class="caption-dot"></div>
+        <span id="caption-text">Ready. Waiting for agent claims.</span>
+      </div>
+    </div>
+
+    <!-- Bottom-left: "How to read this" collapsible guide card -->
+    <div class="guide-card glass-surface" id="guide-card">
+      <div class="guide-header" onclick="toggleGuide()" role="button" tabindex="0" aria-expanded="true">
+        <div class="guide-title">
+          <span>How to read this</span>
+        </div>
+        <span class="guide-toggle">▼</span>
+      </div>
+      <div class="guide-content" id="guide-content">
+        <div class="guide-item">
+          <span class="guide-icon guide-icon-node"></span>
+          <span>Boxes = functions</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-icon guide-icon-arrow"></span>
+          <span>Arrows = who calls whom</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-icon guide-icon-green"></span>
+          <span>Green ring = editing</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-icon guide-icon-amber"></span>
+          <span>Amber ring = waiting</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-icon guide-icon-thread"></span>
+          <span>Glowing thread = call chain between edits</span>
         </div>
       </div>
     </div>
@@ -391,104 +825,205 @@
   <script>
     let cy = null;
     let eventCount = 0;
+    let activeClaimsMap = new Map(); // claim_id -> claim object
+    let pulseInterval = null;
+    let dashOffset = 0;
+    let hasLoadedOnce = false;
 
-    // Initialize Cytoscape with readable, 18px labels and auto-fitting node dimensions
+    // Helper: Return distinct identity color for agent
+    function getAgentColor(agentId) {
+      if (!agentId) return '#7AB8FF';
+      const clean = agentId.toLowerCase();
+      if (clean.includes('agent-1') || clean.includes('agent_1') || clean.includes('alice')) {
+        return '#7AB8FF'; // agent-1: soft blue
+      } else if (clean.includes('agent-2') || clean.includes('agent_2') || clean.includes('bob')) {
+        return '#C79BFF'; // agent-2: soft violet
+      } else {
+        return '#FFB07A'; // other agents: soft warm peach
+      }
+    }
+
+    // Helper: Return faint tint based on module filename
+    function getFileTint(filename) {
+      if (!filename) return 'rgba(19, 28, 51, 0.85)';
+      const f = filename.toLowerCase();
+      if (f.includes('handler')) return 'rgba(59, 108, 255, 0.16)';
+      if (f.includes('validator')) return 'rgba(138, 92, 255, 0.16)';
+      if (f.includes('utils')) return 'rgba(94, 224, 160, 0.14)';
+      if (f.includes('billing')) return 'rgba(245, 180, 84, 0.14)';
+      return 'rgba(255, 255, 255, 0.08)';
+    }
+
+    // Toggle guide card
+    function toggleGuide() {
+      const card = document.getElementById('guide-card');
+      card.classList.toggle('collapsed');
+      const isExpanded = !card.classList.contains('collapsed');
+      document.querySelector('.guide-header').setAttribute('aria-expanded', isExpanded);
+    }
+
+    // Update bottom caption pill
+    function setCaption(text) {
+      const el = document.getElementById('caption-text');
+      if (el) el.innerText = text;
+    }
+
+    // Initialize Cytoscape graph with Dagre top-to-bottom layout
     function initCytoscape() {
       cy = cytoscape({
         container: document.getElementById('cy'),
+        boxSelectionEnabled: false,
+        autounselectify: true,
         style: [
-          // Base Symbol Node
+          // Base Symbol Node (Glass pill, function name 15px+, file name smaller)
           {
             selector: 'node',
             style: {
               'label': 'data(label)',
               'text-valign': 'center',
               'text-halign': 'center',
-              'font-size': '18px',
+              'font-family': '-apple-system, "SF Pro Display", Inter, system-ui, sans-serif',
+              'font-size': '15px',
               'font-weight': '700',
-              'color': '#f9fafb',
-              'background-color': '#1e293b',
-              'border-width': 2,
-              'border-color': '#475569',
+              'color': '#F3F4F6',
+              'background-color': 'data(bgColor)',
+              'background-opacity': 0.88,
+              'border-width': 1.5,
+              'border-color': 'rgba(255, 255, 255, 0.18)',
               'shape': 'round-rectangle',
               'width': 'label',
               'height': 'label',
-              'padding': '22px',
-              'text-max-width': '280px',
+              'padding': '16px',
+              'text-max-width': '260px',
               'text-wrap': 'wrap',
-              'line-height': 1.25
+              'line-height': 1.28,
+              // Depth Level 0: subtle glass shadow
+              'shadow-blur': 12,
+              'shadow-color': '#000000',
+              'shadow-opacity': 0.35,
+              'shadow-offset-y': 3,
+              'transition-property': 'background-color, border-color, border-width, opacity, shadow-blur, shadow-color, shadow-opacity, transform',
+              'transition-duration': '0.25s'
             }
           },
-          // Active Claim (Green)
+
+          // Active Claim: Ring in agent color + elevated shadow (Level 1)
           {
             selector: 'node.status-active',
             style: {
-              'background-color': '#064e3b',
-              'border-color': '#10b981',
-              'border-width': 4,
-              'color': '#ecfdf5'
+              'border-color': 'data(agentColor)',
+              'border-width': 3.5,
+              'shadow-blur': 24,
+              'shadow-color': '#000000',
+              'shadow-opacity': 0.65,
+              'shadow-offset-y': 8
             }
           },
-          // Waiting Claim (Amber/Orange)
+
+          // Waiting Claim: Dashed amber ring + reduced shadow
           {
             selector: 'node.status-waiting',
             style: {
-              'background-color': '#78350f',
-              'border-color': '#f59e0b',
-              'border-width': 4,
-              'color': '#fffbeb'
+              'border-color': '#F5B454',
+              'border-style': 'dashed',
+              'border-width': 3,
+              'shadow-blur': 10,
+              'shadow-color': '#F5B454',
+              'shadow-opacity': 0.35,
+              'shadow-offset-y': 2
             }
           },
-          // Blocked / In Conflict (Red Highlight)
+
+          // Node on collision path (Level 2: largest shadow + verdict glow)
           {
-            selector: 'node.conflict-node',
+            selector: 'node.path-node',
             style: {
-              'border-color': '#ef4444',
-              'border-width': 5,
-              'shadow-blur': 15,
-              'shadow-color': '#ef4444',
-              'shadow-opacity': 0.8
+              'border-color': 'data(verdictColor)',
+              'border-width': 3.5,
+              'shadow-blur': 28,
+              'shadow-color': 'data(verdictColor)',
+              'shadow-opacity': 0.8,
+              'shadow-offset-y': 4
             }
           },
-          // Directed CALLS Edge: Dim gray so path pops
+
+          // Dimmed node (not on collision path during active collision)
+          {
+            selector: 'node.dimmed',
+            style: {
+              'opacity': 0.25
+            }
+          },
+
+          // Directed CALLS Edge: thin (1.5px) curved bezier in muted blue-gray
           {
             selector: 'edge',
             style: {
-              'width': 2,
-              'line-color': '#374151',
-              'target-arrow-color': '#374151',
+              'width': 1.5,
+              'line-color': '#425479',
+              'target-arrow-color': '#425479',
               'target-arrow-shape': 'triangle',
+              'arrow-scale': 0.9,
               'curve-style': 'bezier',
-              'arrow-scale': 1.2,
-              'opacity': 0.4
+              'opacity': 0.55,
+              'transition-property': 'line-color, target-arrow-color, width, opacity',
+              'transition-duration': '0.25s'
             }
           },
-          // Collision Path Edge: 6px Red with clear arrowheads
+
+          // Dimmed edge
+          {
+            selector: 'edge.dimmed',
+            style: {
+              'opacity': 0.12
+            }
+          },
+
+          // Luminous Collision Thread Edge (Verdict color, 4px, glow)
           {
             selector: 'edge.collision-path',
             style: {
-              'width': 6,
-              'line-color': '#ef4444',
-              'target-arrow-color': '#ef4444',
+              'width': 4.5,
+              'line-color': 'data(threadColor)',
+              'target-arrow-color': 'data(threadColor)',
               'target-arrow-shape': 'triangle',
-              'line-style': 'solid',
-              'arrow-scale': 1.8,
+              'arrow-scale': 1.3,
               'opacity': 1.0,
-              'z-index': 999
+              'z-index': 999,
+              'line-style': 'dashed',
+              'line-dash-pattern': [8, 5]
             }
           }
         ],
         layout: {
-          name: 'breadthfirst',
-          directed: true,
-          padding: 60,
-          spacingFactor: 1.6,
+          name: 'dagre',
+          rankDir: 'TB',
+          nodeSep: 65,
+          rankSep: 110,
+          padding: 90,
           animate: false
         }
       });
     }
 
-    // Fetch full graph topology from FastAPI /graph endpoint
+    // Run hierarchical Dagre layout and smoothly center with padding
+    function runDagreLayout(animate = true) {
+      if (!cy) return;
+      const l = cy.layout({
+        name: 'dagre',
+        rankDir: 'TB',
+        nodeSep: 65,
+        rankSep: 110,
+        padding: 90,
+        animate: animate,
+        animationDuration: 300,
+        animationEasing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+        fit: true
+      });
+      l.run();
+    }
+
+    // Fetch full graph topology from /graph
     async function loadGraph() {
       try {
         const res = await fetch('/graph');
@@ -496,27 +1031,32 @@
 
         const elements = [];
 
-        // Build node elements
+        // Build nodes
         (data.nodes || []).forEach(n => {
           const shortFile = (n.file || '').split('/').pop().split('\\').pop();
+          const baseName = n.name || n.id.split('::').pop();
           elements.push({
             data: {
               id: n.id,
-              name: n.name,
+              name: baseName,
               file: shortFile,
               kind: n.kind,
-              label: `${n.name}\n${shortFile}`
+              label: `${baseName}\n${shortFile}`,
+              bgColor: getFileTint(shortFile),
+              agentColor: '#7AB8FF',
+              verdictColor: '#FF5C6C'
             }
           });
         });
 
-        // Build CALLS edge elements
+        // Build CALLS edges
         (data.edges || []).forEach(e => {
           elements.push({
             data: {
               id: `edge_${e.from}_${e.to}`,
               source: e.from,
-              target: e.to
+              target: e.to,
+              threadColor: '#FF5C6C'
             }
           });
         });
@@ -524,47 +1064,49 @@
         cy.elements().remove();
         cy.add(elements);
 
-        // Apply claims styling - only active and waiting claims decorate nodes with badges
+        activeClaimsMap.clear();
+
+        // Apply active and waiting claims
         (data.claims || []).forEach(c => {
           if (c.status === 'active' || c.status === 'waiting') {
+            activeClaimsMap.set(c.id, c);
             applyClaimToNode(c);
           }
         });
+        updateClaimsPanel();
 
-        // Re-run hierarchical layout and fit to full canvas
-        const l = cy.layout({
-          name: 'breadthfirst',
-          directed: true,
-          padding: 60,
-          spacingFactor: 1.6,
-          animate: false
-        });
-        l.run();
-        cy.fit(undefined, 60);
+        // Run layout
+        runDagreLayout(!hasLoadedOnce);
 
-        // If collisions exist, display top banner and red path immediately
+        // Entrance animation on first load only
+        if (!hasLoadedOnce) {
+          hasLoadedOnce = true;
+          animateEntrance();
+        }
+
+        // Restore collision banner and path if present
         if (data.collisions && data.collisions.length > 0) {
           const col = data.collisions[0];
-          const pathParts = col.path_text ? col.path_text.split(" -> ") : [];
-          if (pathParts.length > 0) {
-            highlightCollision(pathParts);
-            const hops = Math.max(0, pathParts.length - 1);
+          const parts = col.path_text ? col.path_text.split(" -> ") : [];
+          if (parts.length > 0) {
+            highlightCollisionPath(parts, col.verdict);
+            const hops = Math.max(0, parts.length - 1);
             const agentA = col.agent_a || 'agent-2';
             const agentB = col.agent_b || 'agent-1';
-            const actionText = col.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
-            showBanner(`🚨 ${col.verdict}: ${agentA} ${actionText} ${agentB} | ${col.path_text} (${hops} hops)`, col.verdict === 'BLOCK');
+            const action = col.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
+            showVerdictBanner(`${agentA} ${action} ${agentB}`, parts.join(' ➔ ') + ` (${hops} hops)`, col.verdict);
+            setCaption(`Conflict detected: ${agentA} ${action} ${agentB} on a ${hops}-hop dependency chain.`);
           }
 
-          // Populate feed cards (oldest to newest, so newest ends on top)
+          // Populate initial feed cards
           data.collisions.slice().reverse().forEach(c => {
-            const parts = c.path_text ? c.path_text.split(" -> ") : [];
-            const hops = Math.max(0, parts.length - 1);
+            const p = c.path_text ? c.path_text.split(" -> ") : [];
             addFeedCard({
               verdict: c.verdict,
               agents: [c.agent_a || 'agent-1', c.agent_b || 'agent-2'],
-              reason: `${c.verdict} collision: Agent '${c.agent_a}' and Agent '${c.agent_b}'`,
-              path: parts,
-              hops: hops,
+              reason: `${c.verdict}: ${c.agent_a} and ${c.agent_b}`,
+              path: p,
+              hops: Math.max(0, p.length - 1),
               precedent_count: c.precedent_count || 0,
               timestamp: c.timestamp
             });
@@ -576,85 +1118,233 @@
       }
     }
 
-    // Decorate a node with its claim status badge (14px+ minimum, 18px base)
+    // Staggered entrance animation on first load
+    function animateEntrance() {
+      try {
+        const nodes = cy.nodes();
+        nodes.forEach((n, idx) => {
+          const originalPos = Object.assign({}, n.position());
+          n.position({ x: originalPos.x, y: originalPos.y + 16 });
+          n.style('opacity', 0);
+          setTimeout(() => {
+            n.animate({
+              position: originalPos,
+              style: { opacity: 1 }
+            }, {
+              duration: 500,
+              easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+            });
+          }, idx * 45);
+        });
+      } catch (e) {
+        console.warn("Entrance animation skipped:", e);
+      }
+    }
+
+    // Decorate a node with claim badge and agent color ring
     function applyClaimToNode(claim) {
       const node = cy.getElementById(claim.symbol_id);
       if (!node || node.empty()) return;
 
-      node.removeClass('status-active status-waiting status-done status-expired');
+      node.removeClass('status-active status-waiting');
 
       const baseName = node.data('name') || claim.symbol_id.split('::').pop();
+      const fileName = node.data('file') || '';
+      const agentColor = getAgentColor(claim.agent_id);
+      node.data('agentColor', agentColor);
+
       if (claim.status === 'active') {
         node.addClass('status-active');
-        node.data('label', `🟢 ${claim.agent_id}\n${baseName}\n[ACTIVE]`);
+        node.data('label', `● ${claim.agent_id} [ACTIVE]\n${baseName}\n${fileName}`);
       } else if (claim.status === 'waiting') {
         node.addClass('status-waiting');
-        node.data('label', `🟡 ${claim.agent_id}\n${baseName}\n[WAITING]`);
+        node.data('label', `◌ ${claim.agent_id} [WAITING]\n${baseName}\n${fileName}`);
       } else {
-        const fileName = node.data('file') || '';
         node.data('label', `${baseName}\n${fileName}`);
       }
     }
 
-    // Highlight the collision path across nodes and edges (6px red path, dim others)
-    function highlightCollision(path) {
+    // Green pulse burst when a waiting node transitions to active
+    function triggerActiveBurst(symbolId) {
+      const node = cy.getElementById(symbolId);
+      if (!node || node.empty()) return;
+
+      const origBorder = node.style('border-color');
+      node.animate({
+        style: {
+          'border-color': '#5EE0A0',
+          'border-width': 6,
+          'shadow-blur': 36,
+          'shadow-color': '#5EE0A0',
+          'shadow-opacity': 0.95
+        }
+      }, {
+        duration: 350,
+        easing: 'ease-out',
+        complete: () => {
+          node.animate({
+            style: {
+              'border-width': 3.5,
+              'shadow-blur': 24,
+              'shadow-opacity': 0.65
+            }
+          }, { duration: 300 });
+        }
+      });
+    }
+
+    // Highlight the collision path with animated glowing thread & dim other elements
+    function highlightCollisionPath(path, verdict = 'BLOCK') {
       if (!path || path.length === 0) return;
 
-      // Clear previous collision highlights
-      cy.elements().removeClass('conflict-node collision-path');
+      const verdictColor = verdict === 'BLOCK' ? '#FF5C6C' : '#F5B454';
+
+      // Dim all nodes and edges by default
+      cy.elements().addClass('dimmed').removeClass('path-node collision-path');
 
       for (let i = 0; i < path.length; i++) {
         const sym = path[i];
         const node = cy.getElementById(sym);
         if (node && !node.empty()) {
-          node.addClass('conflict-node');
+          node.removeClass('dimmed').addClass('path-node');
+          node.data('verdictColor', verdictColor);
         }
 
         if (i < path.length - 1) {
           const nextSym = path[i + 1];
-          // Check edge in forward or reverse
           let edge = cy.edges(`[source = "${sym}"][target = "${nextSym}"]`);
           if (edge.empty()) {
             edge = cy.edges(`[source = "${nextSym}"][target = "${sym}"]`);
           }
           if (!edge.empty()) {
-            edge.addClass('collision-path');
+            edge.removeClass('dimmed').addClass('collision-path');
+            edge.data('threadColor', verdictColor);
           }
         }
       }
+
+      startPulseAnimation();
     }
 
-    // Display prominent top collision banner (never truncate, wrap cleanly)
-    function showBanner(message, isBlock = true) {
+    // Clear collision highlighting and restore normal opacities
+    function clearCollisionHighlight() {
+      cy.elements().removeClass('dimmed path-node collision-path');
+      stopPulseAnimation();
+      const banner = document.getElementById('alert-banner');
+      if (banner) banner.style.display = 'none';
+    }
+
+    // Pulse animation along the collision thread
+    function startPulseAnimation() {
+      if (pulseInterval) return;
+      dashOffset = 0;
+      pulseInterval = setInterval(() => {
+        dashOffset = (dashOffset - 1) % 26;
+        cy.edges('.collision-path').style('line-dash-offset', dashOffset);
+      }, 50);
+    }
+
+    function stopPulseAnimation() {
+      if (pulseInterval) {
+        clearInterval(pulseInterval);
+        pulseInterval = null;
+      }
+    }
+
+    // Update Right Panel 1: Active Claims
+    function updateClaimsPanel() {
+      const listEl = document.getElementById('claims-list');
+      const counterEl = document.getElementById('claims-counter');
+
+      const claims = Array.from(activeClaimsMap.values()).filter(c => c.status === 'active' || c.status === 'waiting');
+      counterEl.innerText = `${claims.length} active`;
+
+      if (claims.length === 0) {
+        listEl.innerHTML = `
+          <div id="empty-claims-placeholder" style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 18px 8px;">
+            No claims held
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = '';
+      claims.forEach(c => {
+        const item = document.createElement('div');
+        item.className = 'claim-item';
+
+        const agentClass = c.agent_id.includes('agent-1') ? 'agent-chip-agent-1' : (c.agent_id.includes('agent-2') ? 'agent-chip-agent-2' : 'agent-chip-other');
+        const statusBadgeClass = c.status === 'active' ? 'status-badge-active' : 'status-badge-waiting';
+        const blockedMsg = (c.status === 'waiting' && c.blocked_by) ? `<div class="claim-blocked-msg">Blocked by ${c.blocked_by}</div>` : '';
+
+        item.innerHTML = `
+          <div class="claim-item-top">
+            <span class="agent-chip ${agentClass}">
+              <span class="agent-dot"></span>
+              <span>${c.agent_id}</span>
+            </span>
+            <span class="status-badge ${statusBadgeClass}">${c.status.toUpperCase()}</span>
+          </div>
+          <div class="claim-symbol">${c.symbol_id}</div>
+          ${blockedMsg}
+        `;
+        listEl.appendChild(item);
+      });
+    }
+
+    // Update Top-center floating banner
+    function showVerdictBanner(title, pathText, verdict = 'BLOCK') {
       const banner = document.getElementById('alert-banner');
       banner.style.display = 'block';
-      banner.style.background = isBlock ? 'rgba(239, 68, 68, 0.25)' : 'rgba(245, 158, 11, 0.25)';
-      banner.style.borderColor = isBlock ? 'var(--block)' : 'var(--warn)';
-      banner.style.color = isBlock ? '#fca5a5' : '#fde68a';
-      banner.innerText = message;
+
+      const isBlock = verdict === 'BLOCK';
+      const isWarn = verdict === 'WARN';
+
+      const bg = isBlock ? 'rgba(255, 92, 108, 0.18)' : (isWarn ? 'rgba(245, 180, 84, 0.18)' : 'rgba(94, 224, 160, 0.18)');
+      const border = isBlock ? 'rgba(255, 92, 108, 0.45)' : (isWarn ? 'rgba(245, 180, 84, 0.45)' : 'rgba(94, 224, 160, 0.45)');
+      const badgeBg = isBlock ? 'var(--verdict-block)' : (isWarn ? 'var(--verdict-warn)' : 'var(--verdict-safe)');
+      const color = isBlock ? '#FFA5AD' : (isWarn ? '#FDE68A' : '#A7F3D0');
+
+      banner.style.background = bg;
+      banner.style.borderColor = border;
+      banner.style.color = color;
+
+      banner.innerHTML = `
+        <span class="banner-badge" style="background:${badgeBg}; color:#0A1020;">${verdict}</span>
+        <strong>${title}</strong>
+        <span style="opacity:0.6; margin: 0 8px;">|</span>
+        <span class="banner-path">${pathText}</span>
+      `;
     }
 
-    // Add card to live verdict feed with full details and precedent count
+    // Add card to Right Panel 2: Verdict feed
     function addFeedCard(event) {
       const feedList = document.getElementById('feed-list');
       const placeholder = document.getElementById('empty-feed-placeholder');
-      if (placeholder) {
-        placeholder.remove();
-      }
+      if (placeholder) placeholder.remove();
 
       eventCount++;
       document.getElementById('feed-counter').innerText = `${eventCount} events`;
 
       const card = document.createElement('div');
-      const verdict = event.verdict || (event.status ? event.status.toUpperCase() : 'SAFE');
-      card.className = `feed-card verdict-${verdict}`;
+      card.className = 'feed-card';
 
+      const verdict = event.verdict || (event.status ? (event.status === 'active' ? 'SAFE' : 'WARN') : 'SAFE');
       const timeStr = event.timestamp ? new Date(event.timestamp * 1000).toLocaleTimeString() : new Date().toLocaleTimeString();
-      const badgeClass = (verdict === 'BLOCK' ? 'badge-BLOCK' : (verdict === 'WARN' ? 'badge-WARN' : 'badge-SAFE'));
 
-      let precedentText = '';
+      let badgeClass = 'verdict-badge-safe';
+      let meaning = 'No call chain overlap';
+      if (verdict === 'BLOCK') {
+        badgeClass = 'verdict-badge-block';
+        meaning = "Signature change could break the other agent's work";
+      } else if (verdict === 'WARN') {
+        badgeClass = 'verdict-badge-warn';
+        meaning = 'Linked by a call chain, body-only changes';
+      }
+
+      let precedentHtml = '';
       if (event.precedent_count && event.precedent_count > 0) {
-        precedentText = `<div class="card-precedent">⚡ Seen ${event.precedent_count} time${event.precedent_count > 1 ? 's' : ''} before</div>`;
+        precedentHtml = `<div class="card-precedent">⚡ Seen ${event.precedent_count} time${event.precedent_count > 1 ? 's' : ''} before</div>`;
       }
 
       let pathHtml = '';
@@ -663,26 +1353,20 @@
         pathHtml = `<div class="card-path">${event.path.join(' ➔ ')}${hopsText}</div>`;
       }
 
-      let agentsText = '';
-      if (event.agents && event.agents.length >= 2) {
-        agentsText = `<div style="font-size: 12px; color: var(--text-muted); font-weight: 600;">Agents: ${event.agents[0]} vs ${event.agents[1]}</div>`;
-      }
-
       card.innerHTML = `
-        <div class="card-top">
-          <span class="badge ${badgeClass}">${verdict}</span>
+        <div class="feed-card-header">
+          <span class="verdict-badge ${badgeClass}">${verdict}</span>
           <span class="card-time">${timeStr}</span>
         </div>
-        ${agentsText}
-        <div class="card-reason">${event.reason || `Agent '${event.agent_id}' claimed '${event.symbol_id}' (${event.status})`}</div>
+        <div class="card-meaning">${event.reason || meaning}</div>
         ${pathHtml}
-        ${precedentText}
+        ${precedentHtml}
       `;
 
       feedList.prepend(card);
     }
 
-    // Connect to Server-Sent Events (SSE) stream for live real-time updates
+    // Connect to Server-Sent Events (SSE)
     function setupSSE() {
       const evtSource = new EventSource('/events');
 
@@ -696,19 +1380,43 @@
           }
 
           if (data.type === 'claim_created' || data.type === 'claim_status_changed') {
+            const oldClaim = activeClaimsMap.get(data.claim_id);
+            const wasWaiting = oldClaim && oldClaim.status === 'waiting';
+
+            if (data.status === 'active' || data.status === 'waiting') {
+              activeClaimsMap.set(data.claim_id, data);
+            } else {
+              activeClaimsMap.delete(data.claim_id);
+            }
+
             applyClaimToNode(data);
+            updateClaimsPanel();
+
+            if (wasWaiting && data.status === 'active') {
+              triggerActiveBurst(data.symbol_id);
+              clearCollisionHighlight();
+              setCaption(`Agent '${data.agent_id}' unblocked and promoted to active on ${data.symbol_id}.`);
+            } else if (data.status === 'active') {
+              setCaption(`Agent '${data.agent_id}' claimed ${data.symbol_id} (${data.change_type || 'BODY'}).`);
+            }
+
             addFeedCard(data);
-            cy.fit(undefined, 60);
+            runDagreLayout(true);
+
           } else if (data.type === 'collision') {
-            highlightCollision(data.path);
-            const actionText = data.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
+            highlightCollisionPath(data.path, data.verdict);
+
+            const action = data.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
             const agentA = data.agents ? data.agents[0] : 'agent-2';
             const agentB = data.agents ? data.agents[1] : 'agent-1';
-            const pathText = data.path ? data.path.join(' -> ') : '';
-            const bannerMsg = `🚨 ${data.verdict}: ${agentA} ${actionText} ${agentB} | ${pathText} (${data.hops} hops)`;
-            showBanner(bannerMsg, data.verdict === 'BLOCK');
+            const pathText = data.path ? data.path.join(' ➔ ') : '';
+            const hops = data.hops !== undefined ? data.hops : Math.max(0, (data.path || []).length - 1);
+
+            showVerdictBanner(`${agentA} ${action} ${agentB}`, `${pathText} (${hops} hops)`, data.verdict);
+            setCaption(`Conflict detected: ${agentA} ${action} ${agentB} on a ${hops}-hop dependency chain.`);
+
             addFeedCard(data);
-            cy.fit(undefined, 60);
+            runDagreLayout(true);
           }
 
         } catch (err) {
@@ -718,37 +1426,47 @@
 
       evtSource.onerror = function() {
         const badge = document.getElementById('sse-status');
-        badge.innerHTML = '<div class="status-dot" style="background:#ef4444"></div><span>Connecting...</span>';
-        badge.style.color = '#ef4444';
+        const text = document.getElementById('sse-status-text');
+        if (badge) {
+          badge.style.color = '#FF5C6C';
+          badge.style.borderColor = 'rgba(255, 92, 108, 0.35)';
+          badge.style.background = 'rgba(255, 92, 108, 0.15)';
+        }
+        if (text) text.innerText = 'Connecting...';
       };
 
       evtSource.onopen = function() {
         const badge = document.getElementById('sse-status');
-        badge.innerHTML = '<div class="status-dot" style="background:#10b981"></div><span>Live Events Active</span>';
-        badge.style.color = '#10b981';
+        const text = document.getElementById('sse-status-text');
+        if (badge) {
+          badge.style.color = 'var(--verdict-safe)';
+          badge.style.borderColor = 'rgba(94, 224, 160, 0.35)';
+          badge.style.background = 'rgba(94, 224, 160, 0.15)';
+        }
+        if (text) text.innerText = 'Live';
       };
     }
 
-    // Reset Demo Button Handler
+    // Reset Demo button action
     async function resetDemo() {
       try {
         const res = await fetch('/demo/reset', { method: 'POST' });
         const data = await res.json();
-        console.log("Reset result:", data);
+        console.log("Reset completed:", data);
 
-        // Hide alert banner
-        document.getElementById('alert-banner').style.display = 'none';
+        clearCollisionHighlight();
+        activeClaimsMap.clear();
+        updateClaimsPanel();
 
-        // Clear feed
         document.getElementById('feed-list').innerHTML = `
-          <div id="empty-feed-placeholder" style="color: var(--text-muted); font-size: 13px; text-align: center; margin-top: 40px;">
+          <div id="empty-feed-placeholder" style="color: var(--text-dim); font-size: 12px; text-align: center; padding: 24px 8px;">
             Demo reset. Awaiting new agent claims...
           </div>
         `;
         eventCount = 0;
         document.getElementById('feed-counter').innerText = '0 events';
 
-        // Reload fresh graph without claims/collisions
+        setCaption("Demo state reset. Codebase call graph preserved.");
         await loadGraph();
 
       } catch (err) {
@@ -756,10 +1474,46 @@
       }
     }
 
-    // Page Load Setup
+    // Subtle 2.5D Parallax on background glow blobs
+    function setupParallax() {
+      const glow1 = document.getElementById('bg-glow-1');
+      const glow2 = document.getElementById('bg-glow-2');
+      if (!glow1 || !glow2) return;
+
+      let mouseX = 0, mouseY = 0;
+      let currentX1 = 0, currentY1 = 0;
+      let currentX2 = 0, currentY2 = 0;
+      let rafId = null;
+
+      window.addEventListener('mousemove', (e) => {
+        const cx = window.innerWidth / 2;
+        const cy = window.innerHeight / 2;
+        mouseX = (e.clientX - cx) / cx;
+        mouseY = (e.clientY - cy) / cy;
+
+        if (!rafId) {
+          rafId = requestAnimationFrame(updateGlows);
+        }
+      }, { passive: true });
+
+      function updateGlows() {
+        currentX1 += (mouseX * 6 - currentX1) * 0.1;
+        currentY1 += (mouseY * 6 - currentY1) * 0.1;
+        currentX2 += (-mouseX * 6 - currentX2) * 0.1;
+        currentY2 += (-mouseY * 6 - currentY2) * 0.1;
+
+        glow1.style.transform = `translate(${currentX1}px, ${currentY1}px)`;
+        glow2.style.transform = `translate(${currentX2}px, ${currentY2}px)`;
+
+        rafId = null;
+      }
+    }
+
+    // Window load handler
     window.addEventListener('DOMContentLoaded', () => {
       initCytoscape();
       loadGraph();
+      setupParallax();
       if (!window.location.search.includes('no_sse')) {
         setupSSE();
       }
