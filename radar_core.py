@@ -274,6 +274,15 @@ class ConflictRadar:
         """Release a claim lock and re-evaluate waiting claims."""
         with self.db.distributed_lock():
             self._expire_stale()
+
+            claim = self.db.get_claim(claim_id)
+            if not claim:
+                return {
+                    "status": "not_found",
+                    "claim_id": claim_id,
+                    "error": f"Claim '{claim_id}' not found."
+                }
+
             now = self.clock()
 
             self.db.release_claim(claim_id, now=now)

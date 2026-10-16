@@ -123,6 +123,7 @@ def test_get_queries_endpoint(client_fixture):
     templates = {q["id"]: q for q in data["queries"]}
     assert "path_search" in templates
     assert "claim_create" in templates
+    assert templates["claim_create"]["name"] == "Claim registration"
     assert "blocked_by_edge" in templates
     assert "collision_record" in templates
     assert "precedent_lookup" in templates

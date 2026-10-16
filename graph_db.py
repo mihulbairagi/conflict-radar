@@ -659,7 +659,7 @@ class GraphDB:
             },
             {
                 "id": "claim_create",
-                "name": "Atomic Claim Registration",
+                "name": "Claim registration",
                 "explanation": "Persists an agent claim with status and links it to the target function symbol.",
                 "cypher": ADD_CLAIM_QUERY.strip(),
                 "labels": [":Agent", ":Symbol", ":Claim"],

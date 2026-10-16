@@ -105,10 +105,14 @@ def test_mcp_full_blocking_and_unblock_flow(mcp_fixture):
 
 
 def test_mcp_check_non_existent_and_done(mcp_fixture):
-    """Test check tool handling of missing claims and done claims."""
-    # Non-existent
+    """Test check and release tool handling of missing claims and done claims."""
+    # Non-existent check and release
     chk_missing = mcp_server.check("claim_does_not_exist")
     assert chk_missing["status"] == "not_found"
+
+    rel_missing = mcp_server.release("claim_does_not_exist")
+    assert rel_missing["status"] == "not_found"
+    assert "not found" in rel_missing["error"].lower()
 
     # Done claim
     res = mcp_server.claim("agent_1", "pkg/other.py::func_d", change_type="BODY")

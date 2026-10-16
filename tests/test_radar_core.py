@@ -199,3 +199,14 @@ def test_empty_agent_id_returns_error(radar_fixture):
     assert v.verdict == "ERROR"
     assert v.error == "INVALID_AGENT_ID"
     assert len(radar.db.get_active_claims()) == 0
+
+
+def test_release_unknown_claim_returns_not_found(radar_fixture):
+    """Releasing an unknown or invalid claim_id returns not_found status."""
+    radar = radar_fixture
+
+    res = radar.release("claim_unknown_xyz")
+    assert res["status"] == "not_found"
+    assert res["claim_id"] == "claim_unknown_xyz"
+    assert "not found" in res["error"].lower()
+
