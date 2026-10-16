@@ -8,6 +8,27 @@ Exposes tools to AI coding agents (Claude Code, Antigravity, Cursor) over MCP:
 """
 
 import sys
+import os
+
+# Auto-bootstrap virtualenv if running in a system Python missing dependencies
+try:
+    import falkordb
+    import mcp
+except ImportError:
+    repo_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(repo_dir, ".venv", "Scripts", "python.exe"),
+        os.path.join(repo_dir, ".venv", "bin", "python"),
+        os.path.join(repo_dir, "venv", "Scripts", "python.exe"),
+        os.path.join(repo_dir, "venv", "bin", "python"),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            import subprocess
+            res = subprocess.run([cand] + sys.argv, env=os.environ)
+            sys.exit(res.returncode)
+    raise
+
 from typing import Dict, Any
 from graph_db import GraphDB
 from radar_core import ConflictRadar

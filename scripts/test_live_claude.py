@@ -21,6 +21,24 @@ import argparse
 # Add repo root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Auto-bootstrap virtualenv if running in a system Python missing dependencies
+try:
+    import falkordb
+except ImportError:
+    repo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(repo_dir, ".venv", "Scripts", "python.exe"),
+        os.path.join(repo_dir, ".venv", "bin", "python"),
+        os.path.join(repo_dir, "venv", "Scripts", "python.exe"),
+        os.path.join(repo_dir, "venv", "bin", "python"),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            import subprocess
+            res = subprocess.run([cand] + sys.argv, env=os.environ)
+            sys.exit(res.returncode)
+    raise
+
 from graph_db import GraphDB
 from radar_core import ConflictRadar
 from indexer import index_codebase
