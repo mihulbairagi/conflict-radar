@@ -6,8 +6,22 @@ claims, call-chain traversals, and precedent memory.
 
 import time
 import uuid
+import threading
+from contextlib import contextmanager
 from typing import Dict, List, Optional, Any, Tuple
 from falkordb import FalkorDB
+
+# Thread-local storage for distributed lock re-entrancy
+_lock_tls = threading.local()
+
+# Redis Lua script for safe atomic lock release (releases only if held token matches)
+LUA_RELEASE_LOCK_SCRIPT = """
+if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+else
+    return 0
+end
+"""
 
 # ==============================================================================
 # Cypher Query Constants (with explanatory comments)
@@ -249,6 +263,63 @@ class GraphDB:
                     "Make sure FalkorDB is running via 'docker compose up -d' or pass strict=False for offline testing."
                 ) from e
             return False
+
+    @contextmanager
+    def distributed_lock(
+        self,
+        lock_name: str = "claim_lock",
+        timeout_s: float = 5.0,
+        expire_ms: int = 5000
+    ):
+        """Acquire a distributed lock backed by FalkorDB's Redis instance with re-entrancy."""
+        if not self.is_connected or self.client is None or not hasattr(self.client, "connection"):
+            # Fallback for in-memory or disconnected mode
+            if not hasattr(self, "_mem_lock"):
+                self._mem_lock = threading.RLock()
+            with self._mem_lock:
+                yield
+            return
+
+        lock_key = f"conflict_radar:lock:{self.graph_name}:{lock_name}"
+        tls_depth_key = f"depth_{lock_name}"
+        tls_token_key = f"token_{lock_name}"
+
+        # Re-entrancy check within the current thread
+        current_depth = getattr(_lock_tls, tls_depth_key, 0)
+        if current_depth > 0:
+            setattr(_lock_tls, tls_depth_key, current_depth + 1)
+            try:
+                yield
+            finally:
+                setattr(_lock_tls, tls_depth_key, getattr(_lock_tls, tls_depth_key, 1) - 1)
+            return
+
+        token = str(uuid.uuid4())
+        start_time = time.perf_counter()
+        acquired = False
+        redis_conn = self.client.connection
+
+        while (time.perf_counter() - start_time) < timeout_s:
+            # Redis SET key token NX PX expire_ms
+            if redis_conn.set(lock_key, token, nx=True, px=expire_ms):
+                acquired = True
+                break
+            time.sleep(0.005)
+
+        if not acquired:
+            raise TimeoutError(f"Could not acquire distributed lock '{lock_name}' within {timeout_s}s.")
+
+        setattr(_lock_tls, tls_depth_key, 1)
+        setattr(_lock_tls, tls_token_key, token)
+        try:
+            yield
+        finally:
+            try:
+                redis_conn.eval(LUA_RELEASE_LOCK_SCRIPT, 1, lock_key, token)
+            except Exception:
+                pass
+            setattr(_lock_tls, tls_depth_key, 0)
+            setattr(_lock_tls, tls_token_key, None)
 
     def _query(self, cypher: str, params: Optional[Dict[str, Any]] = None):
         """Execute Cypher query against FalkorDB.

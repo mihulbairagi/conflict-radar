@@ -49,14 +49,15 @@ class ConflictRadar:
 
     def _expire_stale(self) -> List[Dict[str, Any]]:
         """Lazy expiry: expire claims older than TTL and unblock waiting claims if active claims expired."""
-        now = self.clock()
-        cutoff = now - self.ttl_seconds
-        expired = self.db.expire_stale_claims(cutoff)
-        
-        # If any claims were expired, re-evaluate waiting claims
-        if expired:
-            self._unblock_eligible_waiters()
-        return expired
+        with self.db.distributed_lock():
+            now = self.clock()
+            cutoff = now - self.ttl_seconds
+            expired = self.db.expire_stale_claims(cutoff)
+            
+            # If any claims were expired, re-evaluate waiting claims
+            if expired:
+                self._unblock_eligible_waiters()
+            return expired
 
     def _unblock_eligible_waiters(self) -> List[Dict[str, Any]]:
         """Re-evaluate all WAITING claims sequentially against the active claims pool.
@@ -216,38 +217,39 @@ class ConflictRadar:
                 suggestions=suggestions
             )
 
-        self._expire_stale()
+        with self.db.distributed_lock():
+            self._expire_stale()
 
-        now = self.clock()
-        active_claims = self.db.get_active_claims()
+            now = self.clock()
+            active_claims = self.db.get_active_claims()
 
-        v_str, conflicting_id, path, hops, reason, p_count, p_last, other_sym, other_ag, path_str = self._evaluate(
-            agent_id, symbol_id, c_type, active_claims
-        )
-
-        status = "waiting" if v_str == "BLOCK" else "active"
-        claim_id = self.db.add_claim(agent_id, symbol_id, c_type, status=status, now=now)
-
-        # Record collision EXACTLY ONCE on new claim when verdict is WARN or BLOCK
-        if v_str in ("WARN", "BLOCK") and conflicting_id and other_sym:
-            self.db.record_collision(
-                symbol_id, other_sym, v_str, path_str,
-                agent_a=agent_id, agent_b=other_ag, now=now
+            v_str, conflicting_id, path, hops, reason, p_count, p_last, other_sym, other_ag, path_str = self._evaluate(
+                agent_id, symbol_id, c_type, active_claims
             )
 
-        if v_str == "BLOCK" and conflicting_id:
-            self.db.add_blocked_by(claim_id, conflicting_id)
+            status = "waiting" if v_str == "BLOCK" else "active"
+            claim_id = self.db.add_claim(agent_id, symbol_id, c_type, status=status, now=now)
 
-        return Verdict(
-            verdict=v_str,
-            claim_id=claim_id,
-            conflicting_claim_id=conflicting_id,
-            path=path,
-            hops=hops,
-            reason=reason,
-            precedent_count=p_count,
-            last_collision_time=p_last
-        )
+            # Record collision EXACTLY ONCE on new claim when verdict is WARN or BLOCK
+            if v_str in ("WARN", "BLOCK") and conflicting_id and other_sym:
+                self.db.record_collision(
+                    symbol_id, other_sym, v_str, path_str,
+                    agent_a=agent_id, agent_b=other_ag, now=now
+                )
+
+            if v_str == "BLOCK" and conflicting_id:
+                self.db.add_blocked_by(claim_id, conflicting_id)
+
+            return Verdict(
+                verdict=v_str,
+                claim_id=claim_id,
+                conflicting_claim_id=conflicting_id,
+                path=path,
+                hops=hops,
+                reason=reason,
+                precedent_count=p_count,
+                last_collision_time=p_last
+            )
 
     def check(self, claim_id: str) -> Dict[str, Any]:
         """Check current status of a claim and, if WAITING, return which claim blocks it."""
@@ -270,14 +272,15 @@ class ConflictRadar:
 
     def release(self, claim_id: str) -> Dict[str, Any]:
         """Release a claim lock and re-evaluate waiting claims."""
-        self._expire_stale()
-        now = self.clock()
+        with self.db.distributed_lock():
+            self._expire_stale()
+            now = self.clock()
 
-        self.db.release_claim(claim_id, now=now)
-        unblocked = self._unblock_eligible_waiters()
+            self.db.release_claim(claim_id, now=now)
+            unblocked = self._unblock_eligible_waiters()
 
-        return {
-            "status": "released",
-            "claim_id": claim_id,
-            "unblocked_claims": unblocked
-        }
+            return {
+                "status": "released",
+                "claim_id": claim_id,
+                "unblocked_claims": unblocked
+            }
