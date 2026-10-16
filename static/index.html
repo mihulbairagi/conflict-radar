@@ -885,7 +885,7 @@
               'text-halign': 'center',
               'font-family': '-apple-system, "SF Pro Display", Inter, system-ui, sans-serif',
               'font-size': '15px',
-              'font-weight': '700',
+              'font-weight': 'bold',
               'color': '#F3F4F6',
               'background-color': 'data(bgColor)',
               'background-opacity': 0.88,
@@ -898,53 +898,40 @@
               'text-max-width': '260px',
               'text-wrap': 'wrap',
               'line-height': 1.28,
-              // Depth Level 0: subtle glass shadow
-              'shadow-blur': 12,
-              'shadow-color': '#000000',
-              'shadow-opacity': 0.35,
-              'shadow-offset-y': 3,
-              'transition-property': 'background-color, border-color, border-width, opacity, shadow-blur, shadow-color, shadow-opacity, transform',
+              // Depth Level 0: subtle glass underlay
+              'underlay-color': '#000000',
+              'underlay-padding': 3,
+              'underlay-opacity': 0.35,
+              'underlay-shape': 'round-rectangle',
+              'transition-property': 'background-color, border-color, border-width, opacity, underlay-color, underlay-padding, underlay-opacity',
               'transition-duration': '0.25s'
             }
           },
 
-          // Active Claim: Ring in agent color + elevated shadow (Level 1)
+          // Active Claim: Ring in agent color + elevated underlay (Level 1)
           {
             selector: 'node.status-active',
             style: {
               'border-color': 'data(agentColor)',
               'border-width': 3.5,
-              'shadow-blur': 24,
-              'shadow-color': '#000000',
-              'shadow-opacity': 0.65,
-              'shadow-offset-y': 8
+              'underlay-color': 'data(agentColor)',
+              'underlay-padding': 5,
+              'underlay-opacity': 0.45,
+              'underlay-shape': 'round-rectangle'
             }
           },
 
-          // Waiting Claim: Dashed amber ring + reduced shadow
+          // Waiting Claim: Dashed amber ring + reduced underlay
           {
             selector: 'node.status-waiting',
             style: {
               'border-color': '#F5B454',
               'border-style': 'dashed',
               'border-width': 3,
-              'shadow-blur': 10,
-              'shadow-color': '#F5B454',
-              'shadow-opacity': 0.35,
-              'shadow-offset-y': 2
-            }
-          },
-
-          // Node on collision path (Level 2: largest shadow + verdict glow)
-          {
-            selector: 'node.path-node',
-            style: {
-              'border-color': 'data(verdictColor)',
-              'border-width': 3.5,
-              'shadow-blur': 28,
-              'shadow-color': 'data(verdictColor)',
-              'shadow-opacity': 0.8,
-              'shadow-offset-y': 4
+              'underlay-color': '#F5B454',
+              'underlay-padding': 4,
+              'underlay-opacity': 0.25,
+              'underlay-shape': 'round-rectangle'
             }
           },
 
@@ -956,17 +943,17 @@
             }
           },
 
-          // Node on collision path (Level 2: largest shadow + verdict glow)
+          // Node on collision path (Level 2: prominent glow in verdict color)
           {
             selector: 'node.path-node',
             style: {
               'opacity': 1.0,
               'border-color': 'data(verdictColor)',
               'border-width': 3.5,
-              'shadow-blur': 28,
-              'shadow-color': 'data(verdictColor)',
-              'shadow-opacity': 0.85,
-              'shadow-offset-y': 4
+              'underlay-color': 'data(verdictColor)',
+              'underlay-padding': 8,
+              'underlay-opacity': 0.65,
+              'underlay-shape': 'round-rectangle'
             }
           },
 
@@ -1183,30 +1170,36 @@
 
     // Green pulse burst when a waiting node transitions to active
     function triggerActiveBurst(symbolId) {
-      const node = cy.getElementById(symbolId);
-      if (!node || node.empty()) return;
+      try {
+        if (!cy) return;
+        const node = cy.getElementById(symbolId);
+        if (!node || node.empty()) return;
 
-      node.animate({
-        style: {
+        const origColor = node.data('agentColor') || node.style('border-color') || '#7AB8FF';
+        const origWidth = node.style('border-width') || '3.5px';
+
+        // Apply prominent green pulse styling safely via direct style
+        node.style({
           'border-color': '#5EE0A0',
-          'border-width': 6,
-          'shadow-blur': 36,
-          'shadow-color': '#5EE0A0',
-          'shadow-opacity': 0.95
-        }
-      }, {
-        duration: 350,
-        easing: 'ease-out',
-        complete: () => {
-          node.animate({
-            style: {
-              'border-width': 3.5,
-              'shadow-blur': 24,
-              'shadow-opacity': 0.65
+          'border-width': '7px'
+        });
+
+        // Restore original border styling after 500ms
+        setTimeout(() => {
+          try {
+            if (node && !node.removed && (!node.removed())) {
+              node.style({
+                'border-color': origColor,
+                'border-width': origWidth
+              });
             }
-          }, { duration: 300 });
-        }
-      });
+          } catch (e) {
+            console.warn("Error restoring active-burst styling:", e);
+          }
+        }, 500);
+      } catch (err) {
+        console.error("triggerActiveBurst error:", err);
+      }
     }
 
     // Highlight the collision path with animated glowing thread & dim other elements
@@ -1415,22 +1408,22 @@
               activeClaimsMap.delete(data.claim_id);
             }
 
-            applyClaimToNode(data);
-            updateClaimsPanel();
+            try { applyClaimToNode(data); } catch (err) { console.error("applyClaimToNode error:", err); }
+            try { updateClaimsPanel(); } catch (err) { console.error("updateClaimsPanel error:", err); }
 
             if (wasWaiting && data.status === 'active') {
-              triggerActiveBurst(data.symbol_id);
-              clearCollisionHighlight();
-              setCaption(`Agent '${data.agent_id}' unblocked and promoted to active on ${data.symbol_id}.`);
+              try { triggerActiveBurst(data.symbol_id); } catch (err) { console.error("triggerActiveBurst error:", err); }
+              try { clearCollisionHighlight(); } catch (err) { console.error("clearCollisionHighlight error:", err); }
+              try { setCaption(`Agent '${data.agent_id}' unblocked and promoted to active on ${data.symbol_id}.`); } catch (e) {}
             } else if (data.status === 'active') {
-              setCaption(`Agent '${data.agent_id}' claimed ${data.symbol_id} (${data.change_type || 'BODY'}).`);
+              try { setCaption(`Agent '${data.agent_id}' claimed ${data.symbol_id} (${data.change_type || 'BODY'}).`); } catch (e) {}
             }
 
-            addFeedCard(data);
-            runDagreLayout(true);
+            try { addFeedCard(data); } catch (err) { console.error("addFeedCard error:", err); }
+            try { runDagreLayout(true); } catch (err) { console.error("runDagreLayout error:", err); }
 
           } else if (data.type === 'collision') {
-            highlightCollisionPath(data.path, data.verdict);
+            try { highlightCollisionPath(data.path, data.verdict); } catch (err) { console.error("highlightCollisionPath error:", err); }
 
             const action = data.verdict === 'BLOCK' ? 'blocked by' : 'warns against';
             const agentA = data.agents ? data.agents[0] : 'agent-2';
@@ -1438,11 +1431,11 @@
             const pathText = data.path ? data.path.join(' ➔ ') : '';
             const hops = data.hops !== undefined ? data.hops : Math.max(0, (data.path || []).length - 1);
 
-            showVerdictBanner(`${agentA} ${action} ${agentB}`, `${pathText} (${hops} hops)`, data.verdict);
-            setCaption(`Conflict detected: ${agentA} ${action} ${agentB} on a ${hops}-hop dependency chain.`);
+            try { showVerdictBanner(`${agentA} ${action} ${agentB}`, `${pathText} (${hops} hops)`, data.verdict); } catch (err) { console.error("showVerdictBanner error:", err); }
+            try { setCaption(`Conflict detected: ${agentA} ${action} ${agentB} on a ${hops}-hop dependency chain.`); } catch (e) {}
 
-            addFeedCard(data);
-            runDagreLayout(true);
+            try { addFeedCard(data); } catch (err) { console.error("addFeedCard error:", err); }
+            try { runDagreLayout(true); } catch (err) { console.error("runDagreLayout error:", err); }
           }
 
         } catch (err) {
