@@ -319,6 +319,10 @@ This acquires a background lock for an upstream peer agent, prompts Claude Code 
 1. **Static AST Call Resolution:** The current indexer uses Python's standard `ast` module to resolve explicit function and class calls. Dynamic dispatch (`getattr(module, func_name)`) and runtime reflection are not statically resolved.
 2. **First Blocker Reporting:** When an agent's proposed edit conflicts with multiple concurrent peers, Conflict Radar reports the first conflicting lock along the shortest path.
 3. **Language Scope:** The current AST parser targets Python (`.py`). The FalkorDB graph schema is language-agnostic; indexing JavaScript, TypeScript, or Go simply requires attaching language-specific AST/LSP indexers.
+4. **Single-Instance Distributed Lock:** The Redis distributed lock has a 5-second TTL and only works with a single FalkorDB instance.
+5. **Fallback Unit Tests:** Some unit tests use the in-memory fallback store (`strict=False`); only `tests/test_real_falkordb.py`, the demo scripts and the concurrency tests prove real-FalkorDB behaviour.
+6. **Benchmark Scale:** The scale benchmark indexes this project's own source (about 120 symbols), not an external repository.
+7. **Scripted Demo Scenarios:** The scripted demo buttons in the dashboard are pre-programmed scenarios, not live agents.
 
 ---
 
