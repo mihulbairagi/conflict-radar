@@ -249,7 +249,7 @@ python indexer.py ./sample_repo
 *Output will confirm 4 files, 9 symbols, and 4 call edges indexed.*
 
 ### 4. Run the Full Test Suite
-Verify that all 41 tests pass against the real FalkorDB instance:
+Verify that all 51 tests pass against the real FalkorDB instance:
 ```bash
 pytest -v -rs
 ```
