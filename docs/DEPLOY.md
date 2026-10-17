@@ -1,4 +1,4 @@
-# Deployment Guide: Single Container Deployment (Gate 1)
+# Deployment Guide: Single Container Deployment
 
 This guide documents how to build and run **Conflict Radar** inside a self-contained, single Docker container combining FalkorDB and the FastAPI live dashboard.
 
@@ -6,11 +6,10 @@ This guide documents how to build and run **Conflict Radar** inside a self-conta
 
 ## 1. Architecture Overview
 
-- **Base Image**: `falkordb/falkordb:latest` (Debian 13 trixie).
+- **Base Image**: Pinned by digest (see Dockerfile).
 - **Internal FalkorDB**: Starts in the background listening strictly on loopback interface `127.0.0.1:6379`. Port `6379` is **not published** to the host, protecting raw database queries and mutation commands from external access.
 - **FastAPI Dashboard**: Runs on `0.0.0.0:${PORT:-8000}` via `uvicorn dashboard:app`, serving the Cytoscape.js interactive graph, SSE events stream, and demo triggers.
 - **Auto-Indexing**: On container boot, `./sample_repo` is automatically indexed into FalkorDB before the dashboard accepts connections (generating 9 symbols and 4 call edges).
-- **Watchdog Supervision**: A background monitor observes the FalkorDB PID. If FalkorDB exits or crashes, the container immediately terminates non-zero rather than serving an orphaned dashboard.
 
 ---
 
@@ -35,7 +34,7 @@ docker run --rm -p 8000:8000 --name conflict-radar conflict-radar
 ```
 
 ### Run on Custom Port via `$PORT`
-To bind the container to a custom port (e.g. 8080 or cloud platform environments like Render / Fly.io):
+To bind the container to a custom port (e.g. 8080, or on platforms that inject a PORT environment variable -- not yet deployed on any host):
 ```bash
 docker run --rm -e PORT=8080 -p 8080:8080 --name conflict-radar conflict-radar
 ```
@@ -70,7 +69,7 @@ When the container is running:
 - **Shared Visitor State**: Dashboard state is global and shared across all active viewers. If two judges or users access the live dashboard concurrently, triggering a scenario or clicking reset immediately mutates the state for both viewers via SSE.
 - **Unauthenticated Demo Endpoints**: The endpoints `/demo/scenario/{1-4}` and `/demo/reset` have no authentication. Anyone with network access to the dashboard URL can reset or trigger scenarios.
 - **Free Cloud Host Spin-down (Cold Wake-Up)**: Container startup takes about 35 s (measured under 512 MB / 0.1 CPU). On free hosts that spin down when idle, the host's own wake-up time is added on top of that.
-- **Single Container Architecture**: Designed for local development and single-instance cloud demos (e.g. Render / Fly.io). Scaling across multiple container instances would require an external FalkorDB cluster.
+- **Single Container Architecture**: Designed for local development and single-instance cloud demos on platforms that inject a PORT environment variable (not yet deployed on any host). Scaling across multiple container instances would require an external FalkorDB cluster.
 - **Ephemeral Storage**: FalkorDB runs entirely inside the container. All data is reset and re-indexed on container start.
 - **No TLS / Auth in `graph_db.py`**: Connections between `dashboard.py` and FalkorDB occur over plain TCP on localhost `127.0.0.1:6379`.
 

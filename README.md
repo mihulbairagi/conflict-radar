@@ -406,7 +406,7 @@ The conflict question is a bounded-hop reachability question over a call graph i
 - **Q: Is this a toy repo?**  
   **A:** The demo uses a 9-function sample repo for clarity. The indexer and queries were also run on `psf/requests` (numbers above). Indirect calls and large-repo behaviour beyond that are untested and listed in Known Limitations.
 - **Q: Why FalkorDB and not an in-memory graph (e.g. networkx)?**  
-  **A:** FalkorDB provides shared state across several concurrent MCP server processes, native openCypher `shortestPath` queries, and live visibility via the dashboard query inspector.
+  **A:** FalkorDB provides shared state across several concurrent MCP server processes, persistence of graph structure and collision memory across restarts (with the docker-compose volume; the single-container deployment re-indexes on every start), native openCypher `shortestPath` queries, and live visibility via the dashboard query inspector.
 
 ---
 
