@@ -19,6 +19,97 @@ def connect_graph(host: str = "localhost", port: int = 6379, graph_name: str = "
     return client.select_graph(graph_name)
 
 
+def is_overload_stub(node: ast.AST) -> bool:
+    """Return True if node has an @overload or @typing.overload decorator."""
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return False
+    for dec in node.decorator_list:
+        if isinstance(dec, ast.Name) and dec.id == "overload":
+            return True
+        elif isinstance(dec, ast.Attribute) and dec.attr == "overload":
+            return True
+    return False
+
+
+def find_method_in_class_hierarchy(
+    rel_file: str,
+    class_name: str,
+    method_name: str,
+    class_methods: Dict[str, Dict[str, Set[str]]],
+    class_bases: Dict[str, Dict[str, List[str]]],
+    visited: Optional[Set[str]] = None,
+) -> Optional[str]:
+    """Look up method_name in class_name or its base classes defined in the same file."""
+    if visited is None:
+        visited = set()
+    if class_name in visited:
+        return None
+    visited.add(class_name)
+
+    # 1. Check if method_name is defined directly in this class
+    methods = class_methods.get(rel_file, {}).get(class_name, set())
+    if method_name in methods:
+        return f"{rel_file}::{class_name}.{method_name}"
+
+    # 2. Check base classes defined in the same file recursively
+    bases = class_bases.get(rel_file, {}).get(class_name, [])
+    for base in bases:
+        if base in class_methods.get(rel_file, {}):
+            target = find_method_in_class_hierarchy(
+                rel_file, base, method_name, class_methods, class_bases, visited
+            )
+            if target:
+                return target
+
+    return None
+
+
+def resolve_call(
+    call: ast.Call,
+    current_file: str,
+    import_map: Dict[str, str],
+    module_alias_map: Dict[str, str],
+    file_symbols: Dict[str, Set[str]],
+    current_class: Optional[str] = None,
+    class_methods: Optional[Dict[str, Dict[str, Set[str]]]] = None,
+    class_bases: Optional[Dict[str, Dict[str, List[str]]]] = None,
+) -> Optional[str]:
+    """Resolve an ast.Call to a target symbol ID."""
+    func = call.func
+
+    # 1. Direct function or class call: func(...)
+    if isinstance(func, ast.Name):
+        name = func.id
+        if name in import_map:
+            return import_map[name]
+        if name in file_symbols.get(current_file, set()):
+            return f"{current_file}::{name}"
+        return None
+
+    # 2. Attribute calls: target.method(...)
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        target_name = func.value.id
+        attr_name = func.attr
+
+        # 2a. self.X(...) or cls.X(...) inside a method
+        if target_name in ("self", "cls") and current_class and class_methods and class_bases:
+            return find_method_in_class_hierarchy(
+                current_file, current_class, attr_name, class_methods, class_bases
+            )
+
+        # 2b. alias.func(...) or alias.Class(...) where alias is an imported module
+        if target_name in module_alias_map:
+            target_file = module_alias_map[target_name]
+            if attr_name in file_symbols.get(target_file, set()):
+                return f"{target_file}::{attr_name}"
+            return None
+
+        # 2c. Calls on arbitrary variables (adapter.send, req.url.decode, etc.) remain unresolved
+        return None
+
+    return None
+
+
 def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
     """Parse all Python files in target_dir and write the call graph to FalkorDB."""
     root_path = Path(target_dir).resolve()
@@ -38,8 +129,10 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
     contains_edges: List[Tuple[str, str]] = []  # (file_path, symbol_id)
     file_symbols: Dict[str, Set[str]] = {}  # file_path -> set of local symbol names
     module_to_file: Dict[str, str] = {}  # module dot path -> relative file path
+    class_methods: Dict[str, Dict[str, Set[str]]] = {}  # file_path -> {class_name: set of method names}
+    class_bases: Dict[str, Dict[str, List[str]]] = {}  # file_path -> {class_name: list of base names}
 
-    # Pass 1: Discover files, classes, and functions
+    # Pass 1: Discover files, classes, and functions (skipping @overload stubs)
     for file_path in py_files:
         try:
             rel_file = file_path.relative_to(root_path).as_posix()
@@ -48,6 +141,8 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
 
         files_data.append(rel_file)
         file_symbols[rel_file] = set()
+        class_methods[rel_file] = {}
+        class_bases[rel_file] = {}
 
         # Register module mappings for import resolution
         mod_name = rel_file.removesuffix(".py").replace("/", ".")
@@ -66,6 +161,8 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
         for node in ast.iter_child_nodes(tree):
             # Top-level functions
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if is_overload_stub(node):
+                    continue
                 sym_id = f"{rel_file}::{node.name}"
                 symbols_data.append({"id": sym_id, "name": node.name, "file": rel_file, "kind": "function"})
                 contains_edges.append((rel_file, sym_id))
@@ -78,12 +175,20 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
                 contains_edges.append((rel_file, class_id))
                 file_symbols[rel_file].add(node.name)
 
+                class_methods[rel_file][node.name] = set()
+                class_bases[rel_file][node.name] = [
+                    b.id for b in node.bases if isinstance(b, ast.Name)
+                ]
+
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if is_overload_stub(item):
+                            continue
                         method_id = f"{rel_file}::{node.name}.{item.name}"
                         symbols_data.append({"id": method_id, "name": f"{node.name}.{item.name}", "file": rel_file, "kind": "function"})
                         contains_edges.append((rel_file, method_id))
                         file_symbols[rel_file].add(f"{node.name}.{item.name}")
+                        class_methods[rel_file][node.name].add(item.name)
 
     # Pass 2: Discover and resolve function calls
     call_edges: List[Tuple[str, str]] = []  # (caller_symbol_id, callee_symbol_id)
@@ -102,39 +207,66 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
 
         # Map imported names to symbol IDs or module targets
         import_map: Dict[str, str] = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                target_mod = module_to_file.get(node.module or "") or module_to_file.get((node.module or "").split(".")[-1])
-                if target_mod:
-                    for alias in node.names:
-                        as_name = alias.asname or alias.name
-                        import_map[as_name] = f"{target_mod}::{alias.name}"
+        module_alias_map: Dict[str, str] = {}
 
-        # Helper to inspect calls inside a function body
-        def collect_calls(caller_id: str, body_nodes: List[ast.AST]):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    as_name = alias.asname or alias.name
+                    target_file = module_to_file.get(alias.name) or module_to_file.get(alias.name.split(".")[-1])
+                    if target_file:
+                        module_alias_map[as_name] = target_file
+            elif isinstance(node, ast.ImportFrom):
+                mod_str = node.module or ""
+                target_mod_file = module_to_file.get(mod_str) or module_to_file.get(mod_str.split(".")[-1])
+
+                for alias in node.names:
+                    as_name = alias.asname or alias.name
+                    submod_key = f"{mod_str}.{alias.name}" if mod_str else alias.name
+                    if submod_key in module_to_file:
+                        module_alias_map[as_name] = module_to_file[submod_key]
+                    elif alias.name in module_to_file:
+                        module_alias_map[as_name] = module_to_file[alias.name]
+                    elif target_mod_file:
+                        import_map[as_name] = f"{target_mod_file}::{alias.name}"
+
+        # Helper to inspect calls inside a function or method body
+        def collect_calls(caller_id: str, body_nodes: List[ast.AST], current_class: Optional[str] = None):
             for sub_node in body_nodes:
                 for call_node in ast.walk(sub_node):
                     if isinstance(call_node, ast.Call):
-                        callee_id = resolve_call(call_node, rel_file, import_map, file_symbols)
+                        callee_id = resolve_call(
+                            call_node,
+                            rel_file,
+                            import_map,
+                            module_alias_map,
+                            file_symbols,
+                            current_class=current_class,
+                            class_methods=class_methods,
+                            class_bases=class_bases,
+                        )
                         if callee_id:
                             call_edges.append((caller_id, callee_id))
 
         # Inspect top-level functions and class methods
         for node in ast.iter_child_nodes(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if is_overload_stub(node):
+                    continue
                 caller_id = f"{rel_file}::{node.name}"
-                collect_calls(caller_id, node.body)
+                collect_calls(caller_id, node.body, current_class=None)
             elif isinstance(node, ast.ClassDef):
                 for item in node.body:
                     if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if is_overload_stub(item):
+                            continue
                         method_id = f"{rel_file}::{node.name}.{item.name}"
-                        collect_calls(method_id, item.body)
+                        collect_calls(method_id, item.body, current_class=node.name)
 
     call_edges = list(set(call_edges))
 
     # Write to FalkorDB if graph is provided
     if graph is not None:
-        # Create constraint for unique Symbol IDs and File paths
         try:
             graph.query("CREATE CONSTRAINT FOR (s:Symbol) REQUIRE s.id IS UNIQUE")
             graph.query("CREATE CONSTRAINT FOR (f:File) REQUIRE f.path IS UNIQUE")
@@ -174,19 +306,6 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
         "contains_count": len(contains_edges),
         "calls_count": len(call_edges)
     }
-
-
-def resolve_call(call: ast.Call, current_file: str, import_map: Dict[str, str], file_symbols: Dict[str, Set[str]]) -> Optional[str]:
-    """Resolve an ast.Call to a target symbol ID."""
-    func = call.func
-    # Direct function call: parse(...)
-    if isinstance(func, ast.Name):
-        name = func.id
-        if name in import_map:
-            return import_map[name]
-        if name in file_symbols.get(current_file, set()):
-            return f"{current_file}::{name}"
-    return None
 
 
 if __name__ == "__main__":
