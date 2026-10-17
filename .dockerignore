@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv*
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache
+tests/.pytest_cache
+docs/videos
+docs/images
+*.log
+docker-compose.yml
+falkordb_data
