@@ -321,14 +321,14 @@ This acquires a background lock for an upstream peer agent, prompts Claude Code 
 3. **Language Scope:** The current AST parser targets Python (`.py`). The FalkorDB graph schema is language-agnostic; indexing JavaScript, TypeScript, or Go simply requires attaching language-specific AST/LSP indexers.
 4. **Single-Instance Distributed Lock:** The Redis distributed lock has a 5-second TTL and only works with a single FalkorDB instance.
 5. **Fallback Unit Tests:** Some unit tests use the in-memory fallback store (`strict=False`); only `tests/test_real_falkordb.py`, the demo scripts and the concurrency tests prove real-FalkorDB behaviour.
-6. **Benchmark Scale:** The scale benchmark indexes this project's own source (about 120 symbols), not an external repository.
+6. **Benchmark Scale:** The scale benchmark indexes this project's own source (about 156 symbols), not an external repository.
 7. **Scripted Demo Scenarios:** The scripted demo buttons in the dashboard are pre-programmed scenarios, not live agents.
 
 ---
 
 ## 9. Design Decisions
 
-- **Why a Graph Database over SQL or Key-Value Mutexes?** Traditional file-level mutexes (e.g. Redis locks) are too coarse—they block parallel developers working on independent functions within the same module. Relational databases require slow, recursive CTEs to compute transitive caller hierarchies. FalkorDB computes directional and bidirectional `shortestPath` queries in about 3 ms p95 (3.16 ms on 120+ symbols), providing fine-grained symbol-level locking.
+- **Why a Graph Database over SQL or Key-Value Mutexes?** Traditional file-level mutexes (e.g. Redis locks) are too coarse—they block parallel developers working on independent functions within the same module. Relational databases require slow, recursive CTEs to compute transitive caller hierarchies. FalkorDB computes directional and bidirectional `shortestPath` queries in about 2 ms p95 (2.20 ms on 156 symbols), providing fine-grained symbol-level locking.
 - **Bidirectional Contract Protection:** Code changes don't only affect callees downstream; signature edits break upstream callers. Querying both `(A)-[:CALLS*]->(B)` and `(B)-[:CALLS*]->(A)` guarantees mutual contract safety across any transitive depth.
 - **Lazy TTL Expiry:** Background eviction threads risk race conditions when deleting active claims. Instead, Conflict Radar marks stale claims as `expired` lazily during incoming evaluation cycles, keeping locks self-healing and concurrency-safe.
 - **Order-Independent Graph Memory:** By linking a single `:Collision` node to two symbols via dual symmetric `[:INVOLVED]` edges, the graph records collision precedent and queries incident frequency regardless of which agent claims first.

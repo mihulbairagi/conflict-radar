@@ -1,7 +1,7 @@
 """benchmark_scale.py - Performance and visual scale verification for Conflict Radar.
 
-Tests Conflict Radar on a medium codebase (100-200 symbols):
-1. Indexes 120+ symbols and evaluates indexing duration.
+Tests Conflict Radar on a medium codebase (150+ symbols):
+1. Indexes 150+ symbols and evaluates indexing duration.
 2. Executes 100 consecutive bidirectional path-traversal queries in FalkorDB (Cypher).
 3. Evaluates p50, p95, and p99 query latencies.
 4. Validates collision subgraph extraction for large codebases.
@@ -29,7 +29,7 @@ def run_scale_benchmark():
     db = GraphDB(strict=True)
     db.connect()
     
-    # 1. Measure Indexing on 120+ symbols
+    # 1. Measure Indexing on 150+ symbols
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     print(f"\n[1] Indexing medium codebase from '{repo_root}'...")
     

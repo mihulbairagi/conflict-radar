@@ -40,7 +40,7 @@ When judges or reviewers ask: *"What was your role vs. the AI's role?"*, give th
 **Your Winning Answer:**
 > *"Three reasons:
 > 1. **Graph-Native Cypher vs Relational Joins:** Detecting transitive dependencies requires multi-hop path traversal (`(a)-[:CALLS*1..3]->(b)`). In SQL, this requires expensive recursive CTEs that degrade exponentially with depth. In FalkorDB, Cypher `shortestPath` executes in memory in under 2 milliseconds.
-> 2. **Latency (FalkorDB vs Neo4j):** Coding agents poll and claim continuously. Neo4j's JVM overhead often averages 30–80 ms per query. FalkorDB runs as a C-based Redis module with GraphBLAS matrix operations in memory, giving us **3.16 ms p95 latency**.
+> 2. **Latency (FalkorDB vs Neo4j):** Coding agents poll and claim continuously. Neo4j's JVM overhead often averages 30–80 ms per query. FalkorDB runs as a C-based Redis module with GraphBLAS matrix operations in memory, giving us **2.20 ms p95 latency** (measured on 156 symbols).
 > 3. **Dynamic Graph State:** We don't just store static code; we attach transient `:Claim` nodes and `:BLOCKED_BY` relationships directly to code symbols, and delete them on release. FalkorDB excels at high-throughput mutations."*
 
 ---
@@ -87,7 +87,7 @@ When judges or reviewers ask: *"What was your role vs. the AI's role?"*, give th
 | **openCypher `shortestPath`** | Traverses directed caller-callee chains `[:CALLS*1..3]` bidirectional in < 3 ms. |
 | **Atomic Node & Relationship Merging** | `MERGE (blocked)-[:BLOCKED_BY]->(blocker)` for instant dependency locking. |
 | **Symmetric Historical Graphs** | Persistent `:Collision` nodes with `[:INVOLVED]` edges to remember recurrent hotspots. |
-| **In-Memory GraphBLAS Engine** | Enables sub-4ms p95 latency across 120+ symbols without indexing bottlenecks. |
+| **In-Memory GraphBLAS Engine** | Enables sub-3ms p95 latency across 156 symbols without indexing bottlenecks. |
 | **Transient State Deletion** | Instant `DETACH DELETE` or status mutations on release for auto-unblock cascade. |
 
 ---
