@@ -343,9 +343,14 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 
 ---
 
-## 9. Design Decisions
+## Why a Graph?
 
-- **Why a Graph Database over SQL or Key-Value Mutexes?** Traditional file-level mutexes (e.g. Redis locks) are too coarse—they block parallel developers working on independent functions within the same module. Relational databases require slow, recursive CTEs to compute transitive caller hierarchies. FalkorDB computes directional and bidirectional `shortestPath` queries in about 2 ms p95 (2.20 ms on 156 symbols), providing fine-grained symbol-level locking.
+The conflict question is a bounded-hop reachability question over a call graph in both directions (callers and callees). FalkorDB expresses it as a single Cypher `shortestPath` query, returning the exact path. Claim serialization uses a Redis lock on the same instance during evaluation. We did not benchmark against PostgreSQL.
+
+---
+
+## Design Decisions
+
 - **Bidirectional Contract Protection:** Code changes don't only affect callees downstream; signature edits break upstream callers. Querying both `(A)-[:CALLS*]->(B)` and `(B)-[:CALLS*]->(A)` guarantees mutual contract safety across any transitive depth.
 - **Lazy TTL Expiry:** Background eviction threads risk race conditions when deleting active claims. Instead, Conflict Radar marks stale claims as `expired` lazily during incoming evaluation cycles, keeping locks self-healing and concurrency-safe.
 - **Order-Independent Graph Memory:** By linking a single `:Collision` node to two symbols via dual symmetric `[:INVOLVED]` edges, the graph records collision precedent and queries incident frequency regardless of which agent claims first.
