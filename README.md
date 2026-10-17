@@ -314,7 +314,24 @@ This acquires a background lock for an upstream peer agent, prompts Claude Code 
 
 ---
 
-## 8. Known Limitations
+## 8. Tested on a Real Repository (`psf/requests`)
+
+To verify how Conflict Radar behaves beyond the sample demo, we indexed and benchmarked the production codebase of [`psf/requests`](https://github.com/psf/requests):
+
+- **Scale & Indexing:** 19 files, 283 unique symbols, 225 call edges, indexed in ~0.84 s.
+- **Query Latency on Real FalkorDB:** Bounded `shortestPath` queries across multi-hop chains:
+  - **2-hop pairs:** p50 0.84 ms / p95 1.11 ms (50 pairs tested)
+  - **3-hop pairs:** p50 0.80 ms / p95 0.99 ms (50 pairs tested)
+- **Edge Accuracy (Manual Source Audit):** Measured by manually reading the source (audit assisted by AI, author spot-checked `<N>` edges):
+  - Before the `self.method()` fix, recall was **52% (23/44)**.
+  - After the fix: **95% (42/44)** on the 10-function set used to design the fix, and **90% (18/20)** on a separate 12-function holdout.
+  - **0 wrong edges in 75 audited edges** (100% precision across audited functions). Samples are small; do not generalise.
+- **Remaining Misses:** All remaining misses are calls on arbitrary instance variables (e.g. `r.register_hook()`, `adapter.send()`). This is an intentional, documented limitation.
+- **Hub Effect:** A `SIGNATURE` claim on the most-called symbols would BLOCK up to 17 of 283 symbols (~6%) within the 3-hop radius.
+
+---
+
+## 9. Known Limitations
 
 1. **Static AST Call Resolution:** The current indexer uses Python's standard `ast` module to resolve explicit function and class calls. Dynamic dispatch (`getattr(module, func_name)`) and runtime reflection are not statically resolved.
 2. **First Blocker Reporting:** When an agent's proposed edit conflicts with multiple concurrent peers, Conflict Radar reports the first conflicting lock along the shortest path.
