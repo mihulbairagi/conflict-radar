@@ -48,7 +48,7 @@
 
 | Time | Visual / Screen | Spoken Script (English) | Spoken Script (Hinglish Option) |
 |---|---|---|---|
-| **2:20 - 2:45** | Terminal showing `scripts/benchmark_scale.py` or README Cypher section | *"Under the hood, all collision detection runs in FalkorDB using Cypher `shortestPath` queries. We indexed this project's own 156 symbols: indexing took under 600 milliseconds, and bidirectional path queries consistently clocked in at **2.20 milliseconds p95**. It is lightning fast."* | *"Under the hood, saari detection FalkorDB ki Cypher `shortestPath` query se hoti hai. Humne is project ke apne 156 symbols index kiye: indexing 600 ms me ho gayi, aur queries **2.20 ms p95** latency pe run hui. Ye ultra-fast hai."* |
+| **2:20 - 2:45** | Terminal showing `scripts/benchmark_scale.py` or README Cypher section | *"Under the hood, all collision detection runs in FalkorDB using Cypher `shortestPath` queries. We indexed this project's own 156 symbols: indexing latency was 539 milliseconds, and bidirectional path queries consistently clocked in at **2.27 milliseconds p95**."* | *"Under the hood, saari detection FalkorDB ki Cypher `shortestPath` query se hoti hai. Humne is project ke apne 156 symbols index kiye: indexing latency 539 ms thi, aur bidirectional path queries **2.27 ms p95** latency pe run hui."* |
 
 ---
 
