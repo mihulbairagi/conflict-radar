@@ -195,7 +195,8 @@ Conflict Radar computes verdicts using graph distance (hops) and declared modifi
 
 | Proximity | Existing Lock | Proposed Claim | Verdict | Action Taken | Graph State |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **0 Hops** (Identical Symbol) | Any (`BODY`, `SIGNATURE`, `RENAME`) | Any (`BODY`, `SIGNATURE`, `RENAME`) | **`BLOCK`** | Agent must wait | Claim marked `waiting`, `[:BLOCKED_BY]` added |
+| **0 Hops** (Identical Symbol) | Either claim `SIGNATURE`, `RENAME`, or `DELETE` | Any | **`BLOCK`** | Conflicting concurrent signature rewrite | Claim marked `waiting`, `[:BLOCKED_BY]` added |
+| **0 Hops** (Identical Symbol) | `BODY` | `BODY` | **`WARN`** | Shared function coordination | Claim marked `active`, alert emitted |
 | **1 Hop** (Direct Caller/Callee) | Any | `RENAME` or `SIGNATURE` | **`BLOCK`** | Caller/callee interface change | Claim marked `waiting`, `[:BLOCKED_BY]` added |
 | **1 Hop** (Direct Caller/Callee) | `RENAME` or `SIGNATURE` | Any | **`BLOCK`** | Active interface refactor | Claim marked `waiting`, `[:BLOCKED_BY]` added |
 | **1 Hop** (Direct Caller/Callee) | `BODY` | `BODY` | **`WARN`** | High-risk concurrent edit | Claim marked `active`, alert emitted |
@@ -206,6 +207,8 @@ Conflict Radar computes verdicts using graph distance (hops) and declared modifi
 | **Unconnected** | Any | Any | **`SAFE`** | Independent domains | Claim marked `active` |
 | **Same Agent** | Any | Any | **`SAFE`** | Agent modifying own stack | Claim marked `active` (never blocks self) |
 
+*Note: `RENAME` and `DELETE` are treated as `SIGNATURE`.*
+
 ---
 
 ## 6. Setup from Scratch
@@ -214,6 +217,7 @@ Conflict Radar computes verdicts using graph distance (hops) and declared modifi
 - Python 3.11+
 - Docker & Docker Compose
 - Modern web browser (Chrome / Edge / Firefox)
+- The dashboard loads Cytoscape.js from public CDNs (cdnjs, jsdelivr), so it needs internet access to render the graph.
 
 ### 1. Clone the Repository & Install Dependencies
 ```bash
@@ -377,7 +381,7 @@ python scripts/semantic_conflict_demo.py
 4. **Single-Instance Distributed Lock:** The Redis distributed lock has a 5-second TTL and only works with a single FalkorDB instance.
 5. **Fallback Unit Tests:** Some unit tests use the in-memory fallback store (`strict=False`); only `tests/test_real_falkordb.py`, the demo scripts and the concurrency tests prove real-FalkorDB behaviour.
 6. **Benchmark Scale:** The largest repository tested is psf/requests (283 symbols, 19 files). Behaviour on larger repositories is untested.
-7. **Scripted Demo Scenarios & Shared Playground:** The scripted demo buttons in the dashboard are pre-programmed scenarios on `sample_repo`, not live agents. On a deployed cloud demo, dashboard state is shared across concurrent visitors via SSE and `/demo/reset` is unauthenticated. Reproducible semantic conflicts can be tested via `scripts/semantic_conflict_demo.py`.
+7. **Scripted Demo Scenarios & Shared Playground:** The scripted demo buttons in the dashboard are pre-programmed scenarios on `sample_repo`, not live agents. On a deployed cloud demo, dashboard state is shared across concurrent visitors via SSE and `/demo/reset` is unauthenticated. Reproducible semantic conflicts can be tested via `scripts/semantic_conflict_demo.py`. Dashboard Scenario 4 seeds one prior collision (if none exists) to demonstrate the precedent query; the precedent mechanism itself (recording, order-independent counting) is covered by `tests/test_memory_and_expiry.py` and `tests/test_real_falkordb.py`.
 8. **Current-Code Graph Visibility:** The graph reflects the current code. A new dependency an agent adds mid-edit is not visible until re-index; a claim on a symbol with no existing call path to the other claim returns SAFE even if the edit then adds one.
 9. **Cooperative Protocol:** Protocol is cooperative: nothing stops an agent that skips `claim()`.
 

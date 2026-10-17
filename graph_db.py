@@ -647,10 +647,10 @@ class GraphDB:
             {
                 "id": "path_search",
                 "name": "Shortest Directed Call Path",
-                "explanation": "Traverses transitive :CALLS dependencies up to max hops using shortestPath.",
+                "explanation": "Traverses transitive :CALLS dependencies up to max hops using shortestPath (the hop bound is injected as a validated integer, not a parameter).",
                 "cypher": (
                     "MATCH (a:Symbol {id: $start_id}), (b:Symbol {id: $end_id})\n"
-                    "WITH shortestPath((a)-[:CALLS*1..$max_hops]->(b)) AS p\n"
+                    "WITH shortestPath((a)-[:CALLS*1..3]->(b)) AS p\n"
                     "RETURN [node IN nodes(p) | node.id] AS path_nodes\n"
                     "LIMIT 1"
                 ),
