@@ -333,7 +333,7 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 
 ## 9. Known Limitations
 
-1. **Static AST Call Resolution:** The current indexer uses Python's standard `ast` module to resolve explicit function and class calls. Dynamic dispatch (`getattr(module, func_name)`) and runtime reflection are not statically resolved.
+1. **Static AST Call Resolution & Indirect Calls:** The current indexer uses Python's standard `ast` module to resolve explicit function, class, and method calls (`self.method()`, class inheritance, and direct imports). On an audit of `psf/requests`, call edge recall was measured at 90–95% (42/44 on tuning set, 18/20 on holdout). Resolving calls on arbitrary instance variables (e.g., `adapter.send()`, `r.register_hook()`) requires dynamic type inference via LSP (e.g., Pyright), which is planned as future work. Dynamic dispatch (`getattr()`) and runtime reflection remain out of scope for static AST parsing.
 2. **First Blocker Reporting:** When an agent's proposed edit conflicts with multiple concurrent peers, Conflict Radar reports the first conflicting lock along the shortest path.
 3. **Language Scope:** The current AST parser targets Python (`.py`). The FalkorDB graph schema is language-agnostic; indexing JavaScript, TypeScript, or Go simply requires attaching language-specific AST/LSP indexers.
 4. **Single-Instance Distributed Lock:** The Redis distributed lock has a 5-second TTL and only works with a single FalkorDB instance.
