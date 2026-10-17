@@ -357,6 +357,17 @@ The conflict question is a bounded-hop reachability question over a call graph i
 
 ---
 
+## FAQ for Reviewers
+
+- **Q: Is this a graph database or a lock manager?**  
+  **A:** The graph decides WHETHER two claims conflict (bounded-hop reachability in both directions); a Redis lock on the same instance only serializes claim evaluation. We did not benchmark against PostgreSQL.
+- **Q: Where is the memory?**  
+  **A:** Collisions are persisted as `:Collision` nodes linked to the symbols involved and surfaced as precedent ("seen N times before"). It is recorded history, not learning, and it does not change the verdict yet.
+- **Q: Is this a toy repo?**  
+  **A:** The demo uses a 9-function sample repo for clarity. The indexer and queries were also run on `psf/requests` (numbers above). Indirect calls and large-repo behaviour beyond that are untested and listed in Known Limitations.
+
+---
+
 ## 10. AI Use Disclosure
 
 TODO: written by the author.
