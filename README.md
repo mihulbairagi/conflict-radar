@@ -268,6 +268,20 @@ python demo.py
 ```
 Press `[ENTER]` to step through each scenario while observing live updates in your browser. (To run without pauses, pass `python demo.py --fast`).
 
+### Alternative: Single-Container Run (Docker)
+You can also run the entire system (FalkorDB + FastAPI dashboard + auto-indexed graph) in one self-contained container:
+```bash
+docker build -t conflict-radar .
+docker run --rm -p 8000:8000 conflict-radar
+```
+Open **`http://localhost:8000`** in your browser. Detailed architecture, security configuration, and resource benchmarks under free-tier limits (512 MB RAM / 0.1 CPU) are in [docs/DEPLOY.md](docs/DEPLOY.md).
+
+> [!NOTE]
+> **Live Playground & Container Caveats:**
+> - **Interactive Playground Scope:** The container pre-loads `./sample_repo` (9 symbols, 4 call edges) for instantaneous visual inspection of the 4 coordination scenarios. Indexing a real repository (psf/requests, 283 symbols, 225 call edges) and the semantic-conflict demo run locally via `python scripts/semantic_conflict_demo.py`.
+> - **Shared Visitor State:** On a deployed cloud instance, dashboard state is shared globally across concurrent visitors via SSE; triggering a scenario or clicking reset affects all viewers simultaneously. Demo endpoints (`/demo/scenario/{1-4}` and `/demo/reset`) are unauthenticated.
+> - **Free-Tier Cold Wake-Up:** Container startup takes about 35 s (measured under 512 MB / 0.1 CPU). On free hosts that spin down when idle, the host's own wake-up time is added on top of that.
+
 ---
 
 ## 7. Connecting an AI Coding Agent
@@ -318,7 +332,7 @@ This acquires a background lock for an upstream peer agent, prompts Claude Code 
 
 To verify how Conflict Radar behaves beyond the sample demo, we indexed and benchmarked the production codebase of [`psf/requests`](https://github.com/psf/requests):
 
-- **Scale & Indexing:** 19 files, 283 unique symbols, 225 call edges, indexed in ~0.84 s.
+- **Scale & Indexing:** 19 files, 283 unique symbols, 225 call edges, indexed in ~0.84 s. The indexer discovers 259 AST call sites; 225 resolve to indexed symbols and are persisted as `:CALLS` edges in FalkorDB (the remaining 34 target Python standard library re-exports via `compat.py`, which have no `:Symbol` nodes).
 - **Query Latency on Real FalkorDB:** Bounded `shortestPath` queries across multi-hop chains:
   - **2-hop pairs:** p50 0.84 ms / p95 1.11 ms (50 pairs tested)
   - **3-hop pairs:** p50 0.80 ms / p95 0.99 ms (50 pairs tested)
@@ -329,6 +343,30 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 - **Remaining Misses:** All remaining misses are calls on arbitrary instance variables (e.g. `r.register_hook()`, `adapter.send()`). This is an intentional, documented limitation.
 - **Hub Effect:** A `SIGNATURE` claim on the most-called symbols would BLOCK up to 17 of 283 symbols (~6%) within the 3-hop radius.
 
+### Semantic Merge Conflict Demo (Git-Clean, Runtime-Broken)
+
+To prove that Conflict Radar detects semantic collisions that standard Git merges miss, we provide a reproducible script on real `psf/requests` code (pinned commit `611c616`):
+
+```bash
+python scripts/semantic_conflict_demo.py
+```
+
+**Prerequisites:** Python 3, Git, network access to clone `psf/requests`, and a running FalkorDB instance on `localhost:6379` (via `docker compose up -d`).
+
+**Scenario reproduced:**
+1. **Branch `agent1` (Refactor):** Renames parameter `no_proxy` → `bypass_list` in `get_environ_proxies` and safely updates all existing callers (`utils.py:933` and `sessions.py:848`). Standalone smoke test passes (`exit 0`).
+2. **Branch `agent2` (Feature):** Adds a pre-validation call `get_environ_proxies(prep.url, no_proxy=...)` inside `Session.request`. Standalone smoke test passes (`exit 0`).
+3. **Standard Git Merge:** Merging `agent1` into `agent2` succeeds automatically (`exit code 0`, 0 text conflicts) because edits are in separate functions >200 lines apart.
+4. **Runtime Crash:** Running the smoke test on the merged tree fails immediately:
+   ```text
+   TypeError: get_environ_proxies() got an unexpected keyword argument 'no_proxy'
+   ```
+5. **Conflict Radar Prevention:** The claims in step 5 are issued by the script through `radar_core` against a real FalkorDB graph, not by live coding agents. When agents declare their intent via claims:
+   - Agent 1 registers `SIGNATURE` claim on `utils.py::get_environ_proxies` → `SAFE`
+   - Agent 2 registers `BODY` claim on `sessions.py::Session.request` → **`BLOCK`** (2-hop dependency path: `Session.request` → `Session.merge_environment_settings` → `get_environ_proxies`)
+   - Agent 2 on unrelated symbol `adapters.py::_urllib3_request_context` → `SAFE`
+   - Releasing Agent 1's claim automatically promotes Agent 2 to `ACTIVE`.
+
 ---
 
 ## 9. Known Limitations
@@ -338,8 +376,10 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 3. **Language Scope:** The current AST parser targets Python (`.py`). The FalkorDB graph schema is language-agnostic; indexing JavaScript, TypeScript, or Go simply requires attaching language-specific AST/LSP indexers.
 4. **Single-Instance Distributed Lock:** The Redis distributed lock has a 5-second TTL and only works with a single FalkorDB instance.
 5. **Fallback Unit Tests:** Some unit tests use the in-memory fallback store (`strict=False`); only `tests/test_real_falkordb.py`, the demo scripts and the concurrency tests prove real-FalkorDB behaviour.
-6. **Benchmark Scale:** The scale benchmark indexes this project's own source (about 156 symbols), not an external repository.
-7. **Scripted Demo Scenarios:** The scripted demo buttons in the dashboard are pre-programmed scenarios, not live agents.
+6. **Benchmark Scale:** The largest repository tested is psf/requests (283 symbols, 19 files). Behaviour on larger repositories is untested.
+7. **Scripted Demo Scenarios & Shared Playground:** The scripted demo buttons in the dashboard are pre-programmed scenarios on `sample_repo`, not live agents. On a deployed cloud demo, dashboard state is shared across concurrent visitors via SSE and `/demo/reset` is unauthenticated. Reproducible semantic conflicts can be tested via `scripts/semantic_conflict_demo.py`.
+8. **Current-Code Graph Visibility:** The graph reflects the current code. A new dependency an agent adds mid-edit is not visible until re-index; a claim on a symbol with no existing call path to the other claim returns SAFE even if the edit then adds one.
+9. **Cooperative Protocol:** Protocol is cooperative: nothing stops an agent that skips `claim()`.
 
 ---
 
@@ -365,6 +405,8 @@ The conflict question is a bounded-hop reachability question over a call graph i
   **A:** Collisions are persisted as `:Collision` nodes linked to the symbols involved and surfaced as precedent ("seen N times before"). It is recorded history, not learning, and it does not change the verdict yet.
 - **Q: Is this a toy repo?**  
   **A:** The demo uses a 9-function sample repo for clarity. The indexer and queries were also run on `psf/requests` (numbers above). Indirect calls and large-repo behaviour beyond that are untested and listed in Known Limitations.
+- **Q: Why FalkorDB and not an in-memory graph (e.g. networkx)?**  
+  **A:** FalkorDB provides shared state across several concurrent MCP server processes, native openCypher `shortestPath` queries, and live visibility via the dashboard query inspector.
 
 ---
 
