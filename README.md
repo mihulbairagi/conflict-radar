@@ -322,7 +322,7 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 - **Query Latency on Real FalkorDB:** Bounded `shortestPath` queries across multi-hop chains:
   - **2-hop pairs:** p50 0.84 ms / p95 1.11 ms (50 pairs tested)
   - **3-hop pairs:** p50 0.80 ms / p95 0.99 ms (50 pairs tested)
-- **Edge Accuracy (Manual Source Audit):** Measured by manually reading the source (audit assisted by AI, author spot-checked `<N>` edges):
+- **Edge Accuracy (Manual Source Audit):** Measured by manually reading the source (audit assisted by AI, author spot-checked 5 edges):
   - Before the `self.method()` fix, recall was **52% (23/44)**.
   - After the fix: **95% (42/44)** on the 10-function set used to design the fix, and **90% (18/20)** on a separate 12-function holdout.
   - **0 wrong edges in 75 audited edges** (100% precision across audited functions). Samples are small; do not generalise.
@@ -333,7 +333,7 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 
 ## 9. Known Limitations
 
-1. **Static AST Call Resolution & Indirect Calls:** The current indexer uses Python's standard `ast` module to resolve explicit function, class, and method calls (`self.method()`, class inheritance, and direct imports). On an audit of `psf/requests`, call edge recall was measured at 90–95% (42/44 on tuning set, 18/20 on holdout). Resolving calls on arbitrary instance variables (e.g., `adapter.send()`, `r.register_hook()`) requires dynamic type inference via LSP (e.g., Pyright), which is planned as future work. Dynamic dispatch (`getattr()`) and runtime reflection remain out of scope for static AST parsing.
+1. **Static AST Call Resolution & Indirect Calls:** The current indexer uses Python's standard `ast` module to resolve explicit function, class, and method calls (`self.method()`, class inheritance, and direct imports). On an audit of `psf/requests`, call edge recall was 52% before the self.method() fix, and 90% (18/20 edges) on a separate 12-function holdout. Resolving calls on arbitrary instance variables (e.g., `adapter.send()`, `r.register_hook()`) requires dynamic type inference via LSP (e.g., Pyright), which is planned as future work. Dynamic dispatch (`getattr()`) and runtime reflection remain out of scope for static AST parsing.
 2. **First Blocker Reporting:** When an agent's proposed edit conflicts with multiple concurrent peers, Conflict Radar reports the first conflicting lock along the shortest path.
 3. **Language Scope:** The current AST parser targets Python (`.py`). The FalkorDB graph schema is language-agnostic; indexing JavaScript, TypeScript, or Go simply requires attaching language-specific AST/LSP indexers.
 4. **Single-Instance Distributed Lock:** The Redis distributed lock has a 5-second TTL and only works with a single FalkorDB instance.
