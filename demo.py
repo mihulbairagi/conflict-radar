@@ -78,8 +78,9 @@ def pause_prompt(fast_mode: bool, step_name: str = ""):
 
 def reset_and_index():
     """Reset transient graph state and re-index sample_repo."""
-    print(f"{DIM}[Setup] Connecting to FalkorDB on localhost:6379...{RESET}")
-    client = FalkorDB(host="localhost", port=6379)
+    host = os.environ.get("FALKORDB_HOST", "127.0.0.1")
+    print(f"{DIM}[Setup] Connecting to FalkorDB on {host}:6379...{RESET}")
+    client = FalkorDB(host=host, port=6379)
     graph = client.select_graph("conflict_radar")
 
     # Clear transient claims and collisions

@@ -4,6 +4,7 @@ Wraps the falkordb Python client to manage codebase graph topology,
 claims, call-chain traversals, and precedent memory.
 """
 
+import os
 import time
 import uuid
 import threading
@@ -219,7 +220,7 @@ class GraphDB:
     Non-strict mode (strict=False) enables an in-memory graph fallback for isolated offline testing.
     """
 
-    def __init__(self, host: str = "localhost", port: int = 6379, graph_name: str = "conflict_radar", strict: bool = True):
+    def __init__(self, host: str = os.environ.get("FALKORDB_HOST", "127.0.0.1"), port: int = 6379, graph_name: str = "conflict_radar", strict: bool = True):
         self.host = host
         self.port = port
         self.graph_name = graph_name

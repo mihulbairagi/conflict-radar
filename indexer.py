@@ -13,7 +13,7 @@ from typing import Dict, List, Set, Tuple, Optional
 from falkordb import FalkorDB
 
 
-def connect_graph(host: str = "localhost", port: int = 6379, graph_name: str = "conflict_radar"):
+def connect_graph(host: str = os.environ.get("FALKORDB_HOST", "127.0.0.1"), port: int = 6379, graph_name: str = "conflict_radar"):
     """Connect to the FalkorDB instance and select the graph."""
     client = FalkorDB(host=host, port=port)
     return client.select_graph(graph_name)
@@ -310,7 +310,8 @@ def index_codebase(target_dir: str, graph=None) -> Dict[str, int]:
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "."
-    print(f"Connecting to FalkorDB on localhost:6379...")
+    host = os.environ.get("FALKORDB_HOST", "127.0.0.1")
+    print(f"Connecting to FalkorDB on {host}:6379...")
     try:
         g = connect_graph()
         stats = index_codebase(target, graph=g)

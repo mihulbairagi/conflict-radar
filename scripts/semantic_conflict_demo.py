@@ -84,7 +84,8 @@ def main():
 
     temp_dir = Path(tempfile.mkdtemp(prefix="radar_demo_"))
     temp_graph_name = f"demo_semantic_{uuid.uuid4().hex[:6]}"
-    falkor_client = falkordb.FalkorDB(host="localhost", port=6379)
+    falkor_host = os.environ.get("FALKORDB_HOST", "127.0.0.1")
+    falkor_client = falkordb.FalkorDB(host=falkor_host, port=6379)
 
     try:
         # Step 1: Clone requests repo
@@ -215,7 +216,7 @@ def main():
         print(f"    Symbols: {stats['symbols_count']}")
         print(f"    AST call sites discovered: {stats['calls_count']} | CALLS edges persisted in graph: {persisted_calls}")
 
-        db = GraphDB(host="localhost", port=6379, graph_name=temp_graph_name)
+        db = GraphDB(host=falkor_host, port=6379, graph_name=temp_graph_name)
         db.connect()
         radar = ConflictRadar(db=db)
 
