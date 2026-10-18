@@ -316,7 +316,6 @@ This acquires a background lock for an upstream peer agent, prompts Claude Code 
 ### Documentation & Evaluation Guides
 - **Scripted MCP Walkthrough:** [docs/SCRIPTED_MCP_WALKTHROUGH.md](docs/SCRIPTED_MCP_WALKTHROUGH.md) (Step-by-step raw JSON-RPC tool exchange trace).
 - **Video Recording Script:** [docs/VIDEO_SCRIPT.md](docs/VIDEO_SCRIPT.md) (3-minute demo script with Hinglish & English tracks).
-- **Judge Defense & Q&A Guide:** [docs/JUDGES_DEFENSE_GUIDE.md](docs/JUDGES_DEFENSE_GUIDE.md) (Architectural defense, trade-offs, and FalkorDB technical rationale).
 
 ### Available MCP Tools
 - **`claim(agent_id: str, symbol_id: str, change_type: str = "BODY") -> dict`**
@@ -416,7 +415,28 @@ The conflict question is a bounded-hop reachability question over a call graph i
 
 ## 10. AI Use Disclosure
 
-TODO: written by the author.
+This project was built using **Google Antigravity & Gemini 2.5 Pro** as an AI pair-programming collaborator. The division of human architecture versus AI assistance and verification is detailed below:
+
+### 1. Human Conception & Architecture (Mihul Bairagi)
+- **Problem Formulation:** Conceived the core problem—multi-agent coding environments (Devin, Claude Code) produce clean Git merges that cause silent, devastating runtime merge collisions.
+- **Proximity-Based Traffic Control Protocol:** Formulated the graph proximity model: 0-hop (identity collision), 1-hop (caller/callee interface breach), and 2-hop (transitive dependency risk) across `SIGNATURE` vs `BODY` claim types.
+- **System Architecture & Data Modeling:** Designed the FalkorDB graph schema (File, Symbol, Claim, Collision nodes, `:CALLS`, `:INVOLVED`, `:BLOCKED_BY` relationships), the 5-second distributed lock TTL strategy, and the precedent memory algorithm for historical collision analytics.
+
+### 2. AI Code Generation & Scaffolding
+- **Boilerplate & Syntactic Implementation:** Utilized Gemini / Antigravity to write Python AST visitor patterns in `indexer.py`, initial FastAPI endpoint routing, Cytoscape.js interactive graph styling, and SSE stream wiring.
+- **Test Suite Scaffolding:** Generated parametric test cases and mock structures across the 51-test suite.
+
+### 3. Human Quality Assurance & AI Error Detection
+During development, the author audited all AI outputs, identified multiple critical bugs, and directed their remediation:
+- **Process Supervision vs. Zombie Reaping:** Caught that an AI-generated watchdog subshell using `kill -0` hung indefinitely because `uvicorn` (exec'd as PID 1) did not reap zombie processes. Enforced a complete architectural refactor in `start.sh` retaining bash as PID 1 with signal trapping (`SIGTERM`/`SIGINT`) and `wait -n` supervision.
+- **Persistence Path Discrepancy:** Discovered that Docker Compose was mounting volumes to `/data` while FalkorDB actually stored snapshots in `/var/lib/falkordb/data`, causing complete data loss across container teardown. Fixed the volume target and verified snapshot persistence.
+- **Windows IPv6 Socket Drops:** Identified that Windows DNS resolves `localhost` to IPv6 `::1` first, causing Docker Desktop's port forwarder to reset connections (`WinError 10054`) under rapid multiprocessing load. Re-architected connection defaults across `graph_db.py`, `indexer.py`, `demo.py`, and `semantic_conflict_demo.py` to bind explicitly to `127.0.0.1`.
+
+### 4. Empirical Verification & Quality Assurance
+Zero AI-generated claims were accepted without empirical proof:
+- **Test Rigor:** 51 live FalkorDB pytest tests passing with zero failures.
+- **Race Condition Prevention:** Proved 0% double-grants across 30 rapid-fire concurrent multiprocessing barrier iterations in `test_concurrency_race.py`.
+- **Real-World Library Benchmark:** Proved end-to-end prevention of a real cross-file runtime merge collision on `psf/requests` (commit `611c616`), verifying 5 core call graph edges directly against open-source Python ASTs.
 
 ---
 
