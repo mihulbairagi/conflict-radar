@@ -343,7 +343,7 @@ To verify how Conflict Radar behaves beyond the sample demo, we indexed and benc
 - **Edge Accuracy (Manual Source Audit):** Measured by manually reading the source (audit assisted by AI, author spot-checked 5 edges):
   - Before the `self.method()` fix, recall was **52% (23/44)**.
   - After the fix: **95% (42/44)** on the 10-function set used to design the fix, and **90% (18/20)** on a separate 12-function holdout.
-  - **0 wrong edges in 75 audited edges** (100% precision across audited functions). Samples are small; do not generalise.
+  - **0 wrong edges in 75 audited edges.** Small sample and AI-assisted audit, so this is not a general precision claim. Recall on instance-variable calls is lower (see Limitations).
 - **Remaining Misses:** All remaining misses are calls on arbitrary instance variables (e.g. `r.register_hook()`, `adapter.send()`). This is an intentional, documented limitation.
 - **Hub Effect:** A `SIGNATURE` claim on the most-called symbols would BLOCK up to 17 of 283 symbols (~6%) within the 3-hop radius.
 
