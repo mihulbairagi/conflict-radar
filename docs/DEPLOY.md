@@ -10,6 +10,7 @@ This guide documents how to build and run **Conflict Radar** inside a self-conta
 - **Internal FalkorDB**: Starts in the background listening strictly on loopback interface `127.0.0.1:6379`. Port `6379` is **not published** to the host, protecting raw database queries and mutation commands from external access.
 - **FastAPI Dashboard**: Runs on `0.0.0.0:${PORT:-8000}` via `uvicorn dashboard:app`, serving the Cytoscape.js interactive graph, SSE events stream, and demo triggers.
 - **Auto-Indexing**: On container boot, `./sample_repo` is automatically indexed into FalkorDB before the dashboard accepts connections (generating 9 symbols and 4 call edges).
+- **Process Supervision**: `start.sh` runs as PID 1, supervising both `redis-server` and `uvicorn` in the background with signal trapping (`SIGTERM`/`SIGINT`) and `wait -n`. If either process crashes or is killed, the container immediately terminates non-zero (measured: 0.68s on FalkorDB exit, 0.73s on uvicorn exit) to prevent orphaned static HTML serving. On graceful shutdown (`docker stop`), signals are forwarded to both children for clean exit (measured: 2.18s, exit code 0).
 
 ---
 
@@ -59,7 +60,7 @@ When the container is running:
 2. Starts `redis-server --bind 127.0.0.1 --protected-mode yes --loadmodule ...`.
 3. Polls `redis-cli -h 127.0.0.1 ping` until `PONG` is returned (typically <= 1s, timeout: 30s).
 4. Runs `python indexer.py ./sample_repo`, populating the graph.
-5. Launches `uvicorn dashboard:app --host 0.0.0.0 --port ${PORT:-8000}` as PID 1.
+5. Launches `uvicorn dashboard:app --host 0.0.0.0 --port ${PORT:-8000}` in the background and supervises both processes via `wait -n` with signal forwarding.
 
 ---
 

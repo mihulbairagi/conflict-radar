@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 echo "[start.sh] Initializing FalkorDB storage..."
@@ -35,16 +35,28 @@ echo "[start.sh] Indexing ./sample_repo into FalkorDB..."
 python indexer.py ./sample_repo
 echo "[start.sh] Indexing complete."
 
-# Background watchdog: if FalkorDB dies at any point, terminate container process
-(
-    while kill -0 "$FALKOR_PID" 2>/dev/null; do
-        sleep 2
-    done
-    echo "[start.sh] CRITICAL: FalkorDB process died. Exiting container." >&2
-    kill -TERM 1 2>/dev/null || true
-    exit 1
-) &
-
 PORT="${PORT:-8000}"
 echo "[start.sh] Launching FastAPI dashboard on 0.0.0.0:${PORT}..."
-exec uvicorn dashboard:app --host 0.0.0.0 --port "$PORT"
+uvicorn dashboard:app --host 0.0.0.0 --port "$PORT" &
+UVICORN_PID=$!
+
+cleanup() {
+    echo "[start.sh] Received shutdown signal. Terminating children..."
+    kill -TERM "$UVICORN_PID" 2>/dev/null || true
+    kill -TERM "$FALKOR_PID" 2>/dev/null || true
+    wait "$UVICORN_PID" 2>/dev/null || true
+    wait "$FALKOR_PID" 2>/dev/null || true
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+# Process supervision: wait for any child to exit
+wait -n "$FALKOR_PID" "$UVICORN_PID" || true
+
+echo "[start.sh] CRITICAL: A supervised process exited. Terminating remaining services..." >&2
+kill -TERM "$UVICORN_PID" 2>/dev/null || true
+kill -TERM "$FALKOR_PID" 2>/dev/null || true
+wait "$UVICORN_PID" 2>/dev/null || true
+wait "$FALKOR_PID" 2>/dev/null || true
+
+exit 1
